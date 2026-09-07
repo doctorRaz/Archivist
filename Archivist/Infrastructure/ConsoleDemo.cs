@@ -98,6 +98,7 @@ namespace dRz.GPT_Utilities.Archivist.Infrastructure
             Fatal(ex);
         }
 
+        /// <summary>Возвращает цвет текста, контрастный текущему цвету фона консоли.</summary>
         private static ConsoleColor _contrastColor => Console.BackgroundColor == Console.ForegroundColor ? GetContrastColor(Console.BackgroundColor) : Console.ForegroundColor;
 
     }
