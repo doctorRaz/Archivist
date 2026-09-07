@@ -5,10 +5,11 @@ using static dRz.GPT_Utilities.Archivist.Infrastructure.ConsoleWriter;
 
 namespace dRz.GPT_Utilities.Archivist.Infrastructure
 {
+    /// <summary>Демонстрирует возможности вывода диагностических сообщений в консоль.</summary>
     internal static class ConsoleDemo
     {
 
-        /// <summary>Runs this instance.</summary>
+        /// <summary>Запускает демонстрацию возможностей консольного вывода.</summary>
         internal static void Run()
         {
             ShowColors();
@@ -16,7 +17,7 @@ namespace dRz.GPT_Utilities.Archivist.Infrastructure
             ShowStyles();
         }
 
-        /// <summary>Tests the show colors.</summary>
+        /// <summary>Показывает доступные цвета текста в консоли.</summary>
         internal static void ShowColors()
         {
             Info("");
@@ -40,7 +41,7 @@ namespace dRz.GPT_Utilities.Archivist.Infrastructure
             }
         }
 
-        /// <summary>Tests the show colors background.</summary>
+        /// <summary>Показывает сочетания цветов текста и фона в консоли.</summary>
         internal static void TestShowColorsBackground()
         {
             WriteLine("");
@@ -71,7 +72,7 @@ namespace dRz.GPT_Utilities.Archivist.Infrastructure
             }
         }
 
-        /// <summary>Tests the show styles.</summary>
+        /// <summary>Показывает стили диагностических сообщений и обработку исключений.</summary>
         internal static void ShowStyles()
         {
             Exception ex = new Exception("Пример исключения для демонстрации стиля Fatal");
