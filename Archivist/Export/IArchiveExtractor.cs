@@ -14,7 +14,9 @@ internal interface IArchiveExtractor
 /// <summary>Распакованный архив и список содержащихся в нём Markdown-файлов.</summary>
 internal sealed class ExtractedArchive : IDisposable
 {
+    /// <summary>Путь к временному каталогу распакованного архива.</summary>
     private readonly string _directory;
+    /// <summary>Абстракция файловой системы.</summary>
     private readonly IFileSystem _fileSystem;
 
     /// <summary>Создаёт представление распакованного архива.</summary>
