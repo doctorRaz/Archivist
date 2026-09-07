@@ -20,8 +20,11 @@ internal interface IExportPathBuilder
 /// </remarks>
 internal sealed class ExportPathBuilder : IExportPathBuilder
 {
+    /// <summary>Формат года в имени каталога.</summary>
     private const string YearFormat = "yyyy";
+    /// <summary>Формат месяца в имени каталога.</summary>
     private const string MonthFormat = "MM-MMMM";
+    /// <summary>Файловая система для создания каталогов назначения.</summary>
     private readonly IFileSystem _fileSystem;
 
     /// <summary>Создаёт построитель путей назначения.</summary>
