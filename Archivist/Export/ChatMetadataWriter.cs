@@ -40,17 +40,13 @@ internal sealed class ChatMetadataWriter : IChatMetadataWriter
     public void Write(string filePath, ChatMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
-
         string content = _fileSystem.ReadAllText(filePath);
         Match match = ChatMetadataReader.FrontMatterRegex.Match(content);
         if (!match.Success)
             throw new FormatException($"В файле отсутствует YAML front matter: {filePath}");
-
         string yaml = Serialize(metadata);
         string body = content[match.Length..];
-        _fileSystem.WriteAllText(
-            filePath,
-            $"---{Environment.NewLine}{yaml}---{Environment.NewLine}{body}");
+        _fileSystem.WriteAllText(filePath, $"---{Environment.NewLine}{yaml}---{Environment.NewLine}{body}");
     }
 
     /// <summary>Сериализует метаданные в YAML с правилами форматирования Archivist.</summary>
@@ -58,38 +54,19 @@ internal sealed class ChatMetadataWriter : IChatMetadataWriter
     /// <returns>Сериализованное YAML-представление.</returns>
     private static string Serialize(ChatMetadata metadata)
     {
-        var serializer = new SerializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
-            .Build();
-
+        var serializer = new SerializerBuilder().WithNamingConvention(UnderscoredNamingConvention.Instance).ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull).Build();
         var model = new Dictionary<string, object?>();
-
-        if (metadata.Title is not null)
-            model["title"] = metadata.Title;
-        if (metadata.HasAliases)
-            model["aliases"] = metadata.Aliases;
-        if (metadata.HasTags)
-            model["tags"] = metadata.Tags;
-        model["create_time"] = metadata.CreateTimeText ??
-            metadata.CreateTime.ToString("O", CultureInfo.InvariantCulture);
-        if (metadata.HasUpdateTime && metadata.UpdateTime is not null)
-            model["update_time"] = metadata.UpdateTimeText ??
-                metadata.UpdateTime.Value.ToString("O", CultureInfo.InvariantCulture);
-        if (metadata.Model is not null)
-            model["model"] = metadata.Model;
-        if (metadata.ModelName is not null)
-            model["model_name"] = metadata.ModelName;
-        if (metadata.DateExport is not null)
-            model["date_export"] = metadata.DateExport;
-        if (metadata.ChatLink is not null)
-            model["chat_link"] = metadata.ChatLink;
-        if (metadata.ConversationId is Guid conversationId)
-            model["conversation_id"] = conversationId.ToString();
-
+        if (metadata.Title is not null) model["title"] = metadata.Title;
+        if (metadata.HasAliases) model["aliases"] = metadata.Aliases;
+        if (metadata.HasTags) model["tags"] = metadata.Tags;
+        model["create_time"] = metadata.CreateTimeText ?? metadata.CreateTime.ToString("O", CultureInfo.InvariantCulture);
+        if (metadata.HasUpdateTime && metadata.UpdateTime is not null) model["update_time"] = metadata.UpdateTimeText ?? metadata.UpdateTime.Value.ToString("O", CultureInfo.InvariantCulture);
+        if (metadata.Model is not null) model["model"] = metadata.Model;
+        if (metadata.ModelName is not null) model["model_name"] = metadata.ModelName;
+        if (metadata.DateExport is not null) model["date_export"] = metadata.DateExport;
+        if (metadata.ChatLink is not null) model["chat_link"] = metadata.ChatLink;
+        if (metadata.ConversationId is Guid conversationId) model["conversation_id"] = conversationId.ToString();
         string yaml = serializer.Serialize(model).TrimEnd('\r', '\n');
-        return QuotedScalarRegex.Replace(yaml, match =>
-            $"{match.Groups[1].Value}: \"{match.Groups[2].Value.Trim().Trim('"')}\"") +
-            Environment.NewLine;
+        return QuotedScalarRegex.Replace(yaml, match => $"{match.Groups[1].Value}: \"{match.Groups[2].Value.Trim().Trim('"')}\"") + Environment.NewLine;
     }
 }
