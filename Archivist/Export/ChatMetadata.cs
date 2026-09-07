@@ -53,9 +53,7 @@ namespace dRz.GPT_Utilities.Archivist.Export
         [YamlIgnore]
         internal bool HasAliases { get; set; }
 
-        /// <summary>
-        /// Возвращает дату экспорта, преобразованную из строкового значения <see cref="DateExport"/>.
-        /// </summary>
+        /// <summary>Возвращает дату экспорта, преобразованную из строкового значения <see cref="DateExport"/>.</summary>
         [YamlIgnore]
         public DateTime? ExportDateTime
         {
@@ -81,6 +79,7 @@ namespace dRz.GPT_Utilities.Archivist.Export
             set => _conversationId = value;
         }
 
+        /// <summary>Явно сохранённый идентификатор разговора.</summary>
         private Guid? _conversationId;
 
         /// <summary>Извлекает идентификатор разговора из ссылки ChatGPT.</summary>
