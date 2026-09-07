@@ -18,7 +18,9 @@ namespace dRz.GPT_Utilities.Archivist
         /// <summary>Создаёт экземпляр приложения.</summary>
         /// <param name="validator">Валидатор параметров командной строки.</param>
         /// <param name="processor">Процессор экспорта ChatGPT.</param>
-        public ArchivistApplication(CommandLineOptionsValidator validator, IChatGptExportProcessor processor)
+        public ArchivistApplication(
+                                CommandLineOptionsValidator validator,
+                                IChatGptExportProcessor processor)
             : this(validator, processor, new LocalFileSystem())
         {
         }
@@ -28,13 +30,14 @@ namespace dRz.GPT_Utilities.Archivist
         /// <param name="processor">Процессор экспорта ChatGPT.</param>
         /// <param name="fileSystem">Файловая система приложения.</param>
         public ArchivistApplication(
-            CommandLineOptionsValidator validator,
-            IChatGptExportProcessor processor,
-            IFileSystem fileSystem)
+                                CommandLineOptionsValidator validator,
+                                IChatGptExportProcessor processor,
+                                IFileSystem fileSystem)
         {
-            _validator = validator ?? throw new ArgumentNullException(nameof(validator));
-            _processor = processor ?? throw new ArgumentNullException(nameof(processor));
-            _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+            _validator = validator;
+            _processor = processor;
+            _fileSystem = fileSystem
+                ?? throw new ArgumentNullException(nameof(fileSystem));
             ChatMetadataReader metadataReader = new(_fileSystem);
             _maintenance = new ArchiveMaintenance(
                 _fileSystem,
