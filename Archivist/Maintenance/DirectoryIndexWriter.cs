@@ -7,8 +7,11 @@ namespace dRz.GPT_Utilities.Archivist.Maintenance;
 /// <summary>Перестраивает пользовательские навигационные индексы vault.</summary>
 internal sealed class DirectoryIndexWriter
 {
+    /// <summary>Имя файла индекса каталога.</summary>
     private const string IndexFileName = "_index.md";
+    /// <summary>Абстракция файловой системы.</summary>
     private readonly IFileSystem _fileSystem;
+    /// <summary>Источник отображаемых названий разговоров.</summary>
     private readonly ConversationDisplayNameProvider _displayNameProvider;
 
     /// <summary>Создаёт средство перестроения индексов.</summary>
