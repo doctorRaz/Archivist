@@ -129,9 +129,9 @@ namespace dRz.GPT_Utilities.Archivist
             ConsoleWriter.PressAnyKey();
         }
 
-        /// <summary>Код успешного завершения приложения.</summary>
-        private const int ErrorExitCode = 1;
         /// <summary>Код завершения приложения при ошибке.</summary>
+        private const int ErrorExitCode = 1;
+        /// <summary>Код успешного завершения приложения.</summary>
         private const int SuccessExitCode = 0;
     }
 }
