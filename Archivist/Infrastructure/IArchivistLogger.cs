@@ -25,12 +25,27 @@ internal interface IArchivistLogger
     void Error(string message, Exception? exception = null);
 }
 
-/// <summary>Адаптер консольного вывода приложения.</summary>
+/// <summary>Адаптер диагностического вывода через консоль.</summary>
 internal sealed class ConsoleArchivistLogger : IArchivistLogger
 {
+    /// <summary>Записывает трассировочное сообщение через <see cref="ConsoleWriter"/>.</summary>
+    /// <param name="message">Текст сообщения.</param>
     public void Trace(string message) => ConsoleWriter.Trace(message);
+
+    /// <summary>Записывает предупреждение через <see cref="ConsoleWriter"/>.</summary>
+    /// <param name="message">Текст предупреждения.</param>
     public void Warning(string message) => ConsoleWriter.Warn(message);
+
+    /// <summary>Записывает сообщение об успешном выполнении через <see cref="ConsoleWriter"/>.</summary>
+    /// <param name="message">Текст сообщения.</param>
     public void Success(string message) => ConsoleWriter.Success(message);
+
+    /// <summary>Записывает сообщение об обновлении через <see cref="ConsoleWriter"/>.</summary>
+    /// <param name="message">Текст сообщения.</param>
     public void Update(string message) => ConsoleWriter.Update(message);
+
+    /// <summary>Записывает сообщение об ошибке через <see cref="ConsoleWriter"/>.</summary>
+    /// <param name="message">Текст сообщения.</param>
+    /// <param name="exception">Исключение, связанное с ошибкой, если оно есть.</param>
     public void Error(string message, Exception? exception = null) => ConsoleWriter.Error(message, exception);
 }
