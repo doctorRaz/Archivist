@@ -7,7 +7,9 @@ namespace dRz.GPT_Utilities.Archivist.Export;
 /// <summary>Распаковывает ZIP-архивы во временные каталоги.</summary>
 internal sealed class ZipArchiveExtractor : IArchiveExtractor
 {
+    /// <summary>Кодировка имён записей ZIP-архива.</summary>
     private readonly Encoding _entryNameEncoding;
+    /// <summary>Абстракция файловой системы.</summary>
     private readonly IFileSystem _fileSystem;
 
     /// <summary>Создаёт распаковщик ZIP-архивов.</summary>
