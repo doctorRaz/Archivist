@@ -7,6 +7,7 @@ using dRz.GPT_Utilities.Archivist.Maintenance;
 
 namespace dRz.GPT_Utilities.Archivist
 {
+    /// <summary>Координирует запуск Archivist и выполнение выбранного режима работы.</summary>
     internal sealed class ArchivistApplication
     {
         private readonly CommandLineOptionsValidator _validator;
@@ -14,9 +15,9 @@ namespace dRz.GPT_Utilities.Archivist
         private readonly IFileSystem _fileSystem;
         private readonly ArchiveMaintenance _maintenance;
 
-        /// <summary>Initializes a new instance of the <see cref="ArchivistApplication"/> class.</summary>
-        /// <param name="validator">The validator.</param>
-        /// <param name="processor">The processor.</param>
+        /// <summary>Создаёт экземпляр приложения.</summary>
+        /// <param name="validator">Валидатор параметров командной строки.</param>
+        /// <param name="processor">Процессор экспорта ChatGPT.</param>
         public ArchivistApplication(
                                 CommandLineOptionsValidator validator,
                                 IChatGptExportProcessor processor)
@@ -24,6 +25,10 @@ namespace dRz.GPT_Utilities.Archivist
         {
         }
 
+        /// <summary>Создаёт экземпляр приложения с заданной файловой системой.</summary>
+        /// <param name="validator">Валидатор параметров командной строки.</param>
+        /// <param name="processor">Процессор экспорта ChatGPT.</param>
+        /// <param name="fileSystem">Файловая система приложения.</param>
         public ArchivistApplication(
                                 CommandLineOptionsValidator validator,
                                 IChatGptExportProcessor processor,
@@ -42,6 +47,9 @@ namespace dRz.GPT_Utilities.Archivist
                     new ConversationDisplayNameProvider(metadataReader)));
         }
 
+        /// <summary>Разбирает параметры и выполняет выбранный режим работы приложения.</summary>
+        /// <param name="args">Аргументы командной строки.</param>
+        /// <returns>Код завершения приложения: 0 при успешном выполнении и 1 при ошибке.</returns>
         internal int Run(string[] args)
         {
             CommandLineOptions options = CommandLineParser.Parse(args);
@@ -49,7 +57,6 @@ namespace dRz.GPT_Utilities.Archivist
             if (options.ShowHelp)
             {
                 ShowHelp();
-
                 return SuccessExitCode;
             }
 
@@ -61,7 +68,6 @@ namespace dRz.GPT_Utilities.Archivist
             }
 
             options = _validator.Validate(options);
-
             ValidateDirectories(options);
             ExportRequest request = new(
                 options.SourceDirectory,
@@ -70,9 +76,7 @@ namespace dRz.GPT_Utilities.Archivist
                 options.ExtractAll);
 
             ExportResult statistics = _processor.Process(request);
-
             PrintStatistics(statistics);
-
             ConsoleWriter.PressAnyKey();
 
             return statistics.Failed > 0 || statistics.ArchiveFailed > 0
@@ -80,6 +84,8 @@ namespace dRz.GPT_Utilities.Archivist
                 : SuccessExitCode;
         }
 
+        /// <summary>Выводит статистику режима обслуживания.</summary>
+        /// <param name="result">Результат обслуживания.</param>
         private static void PrintMaintenanceStatistics(ArchiveMaintenanceResult result)
         {
             ConsoleWriter.Success("================ MAINTENANCE =========================");
@@ -91,59 +97,44 @@ namespace dRz.GPT_Utilities.Archivist
             ConsoleWriter.Success("=======================================================");
         }
 
+        /// <summary>Проверяет исходный каталог и создаёт каталог назначения при необходимости.</summary>
+        /// <param name="options">Проверенные параметры приложения.</param>
+        /// <exception cref="DirectoryNotFoundException">Исходный каталог не существует.</exception>
         private void ValidateDirectories(CommandLineOptions options)
         {
             if (!_fileSystem.DirectoryExists(options.SourceDirectory))
-            {
-                throw new DirectoryNotFoundException(
-                    $"Каталог с архивами не найден: {options.SourceDirectory}");
-            }
+                throw new DirectoryNotFoundException($"Каталог с архивами не найден: {options.SourceDirectory}");
 
-            // Каталог назначения может отсутствовать.
             _fileSystem.CreateDirectory(options.DestinationDirectory);
         }
 
+        /// <summary>Выводит итоговую статистику обработки экспорта.</summary>
+        /// <param name="statistics">Статистика обработки.</param>
         private static void PrintStatistics(ExportResult statistics)
         {
             ConsoleWriter.Success("================ TOTAL STATISTICS =====================");
-
-            ConsoleWriter.Trace(
-                $"Обработано всего: {statistics.Total.Of(RussianWords.Files)}");
-
+            ConsoleWriter.Trace($"Обработано всего: {statistics.Total.Of(RussianWords.Files)}");
             ConsoleWriter.Trace("Из них:");
-
-            ConsoleWriter.Success(
-                $"\tДобавлено {statistics.Added.Of(RussianWords.Files)}");
-
-            ConsoleWriter.Update(
-                $"\tОбновлено {statistics.Updated.Of(RussianWords.Files)}");
-
-            ConsoleWriter.Trace(
-                $"\tПропущено {statistics.Skipped.Of(RussianWords.Files)}");
-
-            ConsoleWriter.Error(
-                $"\tОшибок {statistics.Failed.Of(RussianWords.Files)}");
-
-            ConsoleWriter.Error(
-                $"\tОшибок архивов {statistics.ArchiveFailed.Of(RussianWords.Archives)}");
-
-            int addedOrUpdated =
-                statistics.Added +
-                statistics.Updated;
-
-            ConsoleWriter.Info(
-                $"Всего заменено и добавлено {addedOrUpdated.Of(RussianWords.Files)}");
-
+            ConsoleWriter.Success($"\tДобавлено {statistics.Added.Of(RussianWords.Files)}");
+            ConsoleWriter.Update($"\tОбновлено {statistics.Updated.Of(RussianWords.Files)}");
+            ConsoleWriter.Trace($"\tПропущено {statistics.Skipped.Of(RussianWords.Files)}");
+            ConsoleWriter.Error($"\tОшибок {statistics.Failed.Of(RussianWords.Files)}");
+            ConsoleWriter.Error($"\tОшибок архивов {statistics.ArchiveFailed.Of(RussianWords.Archives)}");
+            int addedOrUpdated = statistics.Added + statistics.Updated;
+            ConsoleWriter.Info($"Всего заменено и добавлено {addedOrUpdated.Of(RussianWords.Files)}");
             ConsoleWriter.Success("=======================================================");
         }
 
+        /// <summary>Выводит справку по использованию приложения.</summary>
         private static void ShowHelp()
         {
             CommandLineHelp.Print();
             ConsoleWriter.PressAnyKey();
         }
 
+        /// <summary>Код завершения приложения при ошибке.</summary>
         private const int ErrorExitCode = 1;
+        /// <summary>Код успешного завершения приложения.</summary>
         private const int SuccessExitCode = 0;
     }
 }

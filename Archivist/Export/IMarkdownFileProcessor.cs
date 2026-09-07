@@ -3,17 +3,17 @@ using dRz.GPT_Utilities.Archivist.Infrastructure;
 
 namespace dRz.GPT_Utilities.Archivist.Export;
 
-/// <summary>
-/// Обрабатывает один Markdown-файл экспортного архива.
-/// </summary>
+/// <summary>Обрабатывает один Markdown-файл экспортного архива.</summary>
 internal interface IMarkdownFileProcessor
 {
+    /// <summary>Обрабатывает Markdown-файл, используя его метаданные и имя.</summary>
+    /// <param name="sourceFile">Путь к исходному Markdown-файлу.</param>
+    /// <param name="destinationDirectory">Корневой каталог назначения.</param>
+    /// <returns>Результат операции над файлом.</returns>
     FileOperationResult Process(string sourceFile, string destinationDirectory);
 }
 
-/// <summary>
-/// Читает метаданные, нормализует имя и синхронизирует Markdown-файл.
-/// </summary>
+/// <summary>Читает метаданные, нормализует имя и синхронизирует Markdown-файл.</summary>
 internal sealed class MarkdownFileProcessor : IMarkdownFileProcessor
 {
     private readonly IExportPathBuilder _pathBuilder;
@@ -23,6 +23,14 @@ internal sealed class MarkdownFileProcessor : IMarkdownFileProcessor
     private readonly IArchivistLogger _logger;
     private readonly IFileNameNormalizer _fileNameNormalizer;
 
+    /// <summary>Создаёт обработчик Markdown-файлов.</summary>
+    /// <param name="pathBuilder">Построитель пути назначения.</param>
+    /// <param name="metadataReader">Средство чтения метаданных.</param>
+    /// <param name="fileSynchronizer">Средство синхронизации файлов.</param>
+    /// <param name="logger">Журналировщик.</param>
+    /// <param name="fileNameNormalizer">Нормализатор имён файлов.</param>
+    /// <param name="metadataWriter">Средство записи метаданных; при отсутствии используется стандартная реализация.</param>
+    /// <exception cref="ArgumentNullException">Обязательная зависимость равна <see langword="null"/>.</exception>
     public MarkdownFileProcessor(
         IExportPathBuilder pathBuilder,
         IChatMetadataReader metadataReader,
@@ -40,6 +48,10 @@ internal sealed class MarkdownFileProcessor : IMarkdownFileProcessor
             ?? throw new ArgumentNullException(nameof(fileNameNormalizer));
     }
 
+    /// <summary>Обрабатывает Markdown-файл экспортного архива.</summary>
+    /// <param name="sourceFile">Путь к исходному Markdown-файлу.</param>
+    /// <param name="destinationDirectory">Корневой каталог назначения.</param>
+    /// <returns>Результат синхронизации файла.</returns>
     public FileOperationResult Process(string sourceFile, string destinationDirectory)
     {
         ChatMetadata metadata = _metadataReader.Read(sourceFile);

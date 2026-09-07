@@ -9,57 +9,33 @@ namespace dRz.GPT_Utilities.Archivist.Files;
 /// </summary>
 internal interface IConversationIndex
 {
-    /// <summary>
-    /// Обеспечивает индексацию указанного каталога, если он еще не проиндексирован.
-    /// При индексации анализируются все Markdown-файлы в каталоге и их метаданные добавляются в индекс.
-    /// </summary>
-    /// <param name="directory">Каталог для индексации</param>
+    /// <summary>Обеспечивает индексацию указанного каталога, если он еще не проиндексирован.</summary>
+    /// <param name="directory">Каталог для индексации.</param>
     void EnsureIndexed(string directory);
-
-    /// <summary>
-    /// Пытается получить метаданные для указанного файла.
-    /// </summary>
-    /// <param name="path">Путь к файлу</param>
-    /// <param name="metadata">Метаданные файла, если они найдены</param>
-    /// <returns>True, если метаданные найдены, иначе false</returns>
+    /// <summary>Пытается получить метаданные для указанного файла.</summary>
+    /// <param name="path">Путь к файлу.</param>
+    /// <param name="metadata">Метаданные файла, если они найдены.</param>
+    /// <returns>True, если метаданные найдены, иначе false.</returns>
     bool TryGet(string path, out ChatMetadata metadata);
-
-    /// <summary>
-    /// Находит все пути к файлам для указанного идентификатора разговора в заданном каталоге.
-    /// </summary>
-    /// <param name="conversationId">Идентификатор разговора</param>
-    /// <param name="directory">Каталог для поиска</param>
-    /// <returns>Перечисление путей к файлам</returns>
+    /// <summary>Находит все пути к файлам для указанного идентификатора разговора в заданном каталоге.</summary>
+    /// <param name="conversationId">Идентификатор разговора.</param>
+    /// <param name="directory">Каталог для поиска.</param>
+    /// <returns>Перечисление путей к файлам.</returns>
     IEnumerable<string> FindPaths(Guid conversationId, string directory);
-
-    /// <summary>
-    /// Добавляет файл в индекс.
-    /// </summary>
-    /// <param name="path">Путь к файлу</param>
-    /// <param name="metadata">Метаданные файла</param>
+    /// <summary>Добавляет файл в индекс.</summary>
+    /// <param name="path">Путь к файлу.</param>
+    /// <param name="metadata">Метаданные файла.</param>
     void Track(string path, ChatMetadata metadata);
-
-    /// <summary>
-    /// Удаляет файл из индекса.
-    /// </summary>
-    /// <param name="path">Путь к файлу</param>
+    /// <summary>Удаляет файл из индекса.</summary>
+    /// <param name="path">Путь к файлу.</param>
     void Remove(string path);
-
-    /// <summary>
-    /// Возвращает общее количество ошибок чтения при построении индекса.
-    /// </summary>
+    /// <summary>Возвращает общее количество ошибок чтения при построении индекса.</summary>
     int ReadErrorCount { get; }
-
-    /// <summary>
-    /// Проверяет, была ли ошибка чтения указанного пути уже зарегистрирована.
-    /// </summary>
+    /// <summary>Проверяет, была ли ошибка чтения указанного пути уже зарегистрирована.</summary>
     bool HasReadError(string path);
 }
 
-/// <summary>
-/// Реализация индекса Markdown-файлов для быстрого поиска по идентификатору разговора.
-/// Индекс строится лениво, то есть только при необходимости, и поддерживает поиск файлов по ID разговора.
-/// </summary>
+/// <summary>Реализация индекса Markdown-файлов для быстрого поиска по идентификатору разговора.</summary>
 internal sealed class ConversationIndex : IConversationIndex
 {
     /// <summary>Система файловых операций.</summary>
@@ -79,33 +55,23 @@ internal sealed class ConversationIndex : IConversationIndex
 
     /// <summary>Количество ошибок чтения файлов при построении индекса.</summary>
     public int ReadErrorCount { get; private set; }
-
-    /// <summary>
-    /// Проверяет, была ли ошибка чтения указанного пути уже зарегистрирована.
-    /// </summary>
+    /// <summary>Проверяет, была ли ошибка чтения указанного пути уже зарегистрирована.</summary>
+    /// <param name="path">Путь к файлу.</param>
+    /// <returns>True, если путь уже зарегистрирован как ошибочный.</returns>
     public bool HasReadError(string path) => _readErrorPaths.Contains(Normalize(path));
 
-    /// <summary>
-    /// Инициализирует новый экземпляр <see cref="ConversationIndex"/>.
-    /// </summary>
+    /// <summary>Инициализирует новый экземпляр <see cref="ConversationIndex"/>.</summary>
     /// <param name="fileSystem">Система файловых операций.</param>
     /// <param name="metadataReader">Средство чтения метаданных.</param>
     /// <param name="logger">Журналировщик.</param>
-    public ConversationIndex(
-        IFileSystem fileSystem,
-        IChatMetadataReader metadataReader,
-        IArchivistLogger logger)
+    public ConversationIndex(IFileSystem fileSystem, IChatMetadataReader metadataReader, IArchivistLogger logger)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
         _metadataReader = metadataReader ?? throw new ArgumentNullException(nameof(metadataReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Проверяет, проиндексирован ли каталог, и выполняет индексацию при необходимости.
-    /// Индексация происходит лениво — только при первом обращении к каталогу.
-    /// При индексации анализируются все Markdown-файлы в каталоге и их метаданные добавляются в индекс.
-    /// </summary>
+    /// <summary>Проверяет, проиндексирован ли каталог, и выполняет индексацию при необходимости.</summary>
     /// <param name="directory">Путь к каталогу.</param>
     public void EnsureIndexed(string directory)
     {
@@ -122,13 +88,9 @@ internal sealed class ConversationIndex : IConversationIndex
 
         try
         {
-            foreach (string path in _fileSystem.EnumerateFiles(
-                directory, "*.md", SearchOption.TopDirectoryOnly))
+            foreach (string path in _fileSystem.EnumerateFiles(directory, "*.md", SearchOption.TopDirectoryOnly))
             {
-                if (string.Equals(
-                    Path.GetFileName(path),
-                    "_index.md",
-                    StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(Path.GetFileName(path), "_index.md", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -174,20 +136,14 @@ internal sealed class ConversationIndex : IConversationIndex
         _ = _indexedDirectories.Add(directory);
     }
 
-    /// <summary>
-    /// Пытается получить метаданные для указанного файла.
-    /// Метод возвращает true, если метаданные найдены и были успешно прочитаны.
-    /// </summary>
+    /// <summary>Пытается получить метаданные для указанного файла.</summary>
     /// <param name="path">Путь к файлу.</param>
     /// <param name="metadata">Метаданные файла, если они найдены.</param>
     /// <returns>True, если метаданные найдены и были успешно прочитаны, иначе false.</returns>
     public bool TryGet(string path, out ChatMetadata metadata) =>
         _byPath.TryGetValue(Normalize(path), out metadata!);
 
-    /// <summary>
-    /// Находит все пути к файлам, принадлежащим указанному разговору, в пределах заданного каталога.
-    /// При поиске выполняется фильтрация по каталогу и очистка индекса от устаревших записей.
-    /// </summary>
+    /// <summary>Находит все пути к файлам, принадлежащим указанному разговору, в пределах заданного каталога.</summary>
     /// <param name="conversationId">ID разговора.</param>
     /// <param name="directory">Каталог поиска.</param>
     /// <returns>Коллекция путей к файлам.</returns>
@@ -198,24 +154,16 @@ internal sealed class ConversationIndex : IConversationIndex
             return Enumerable.Empty<string>();
         }
 
-        string normalizedDirectory = Normalize(directory).TrimEnd(Path.DirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
-        List<string> result = paths.Where(path => path.StartsWith(
-                normalizedDirectory, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
+        string normalizedDirectory = Normalize(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        List<string> result = paths.Where(path => path.StartsWith(normalizedDirectory, StringComparison.OrdinalIgnoreCase)).ToList();
         foreach (string path in result.Where(path => !_fileSystem.FileExists(path)).ToList())
         {
             Remove(path);
         }
-
         return result.Where(_fileSystem.FileExists).ToList();
     }
 
-    /// <summary>
-    /// Удаляет файл и его метаданные из индекса.
-    /// Если файл не найден в индексе, метод ничего не делает.
-    /// </summary>
+    /// <summary>Удаляет файл и его метаданные из индекса.</summary>
     /// <param name="path">Путь к файлу.</param>
     public void Remove(string path)
     {
@@ -234,10 +182,7 @@ internal sealed class ConversationIndex : IConversationIndex
         }
     }
 
-    /// <summary>
-    /// Добавляет файл и его метаданные в индекс.
-    /// Если файл уже существует в индексе, старые данные заменяются новыми.
-    /// </summary>
+    /// <summary>Добавляет файл и его метаданные в индекс.</summary>
     /// <param name="path">Путь к файлу.</param>
     /// <param name="metadata">Метаданные файла.</param>
     public void Track(string path, ChatMetadata metadata)
@@ -264,14 +209,11 @@ internal sealed class ConversationIndex : IConversationIndex
                 paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 _byConversation.Add(conversationId, paths);
             }
-
             _ = paths.Add(normalizedPath);
         }
     }
 
-    /// <summary>
-    /// Нормализует путь, преобразуя его в полный путь.
-    /// </summary>
+    /// <summary>Нормализует путь, преобразуя его в полный путь.</summary>
     /// <param name="path">Путь для нормализации.</param>
     /// <returns>Полный путь.</returns>
     private static string Normalize(string path) => Path.GetFullPath(path);

@@ -16,15 +16,14 @@ internal interface IFileSynchronizer
     /// <param name="destinationFilePath">Путь к целевому файлу.</param>
     /// <param name="sourceMetadata">Метаданные исходного файла.</param>
     /// <returns>Результат операции синхронизации.</returns>
-    FileOperationResult Synchronize(
-        string sourceFilePath,
-        string destinationFilePath,
-        ChatMetadata sourceMetadata);
+    FileOperationResult Synchronize(string sourceFilePath, string destinationFilePath, ChatMetadata sourceMetadata);
 }
 
 /// <summary>Обновляет навигационный индекс каталога разговоров.</summary>
 internal interface IConversationIndexWriter
 {
+    /// <summary>Обновляет файл индекса указанного каталога.</summary>
+    /// <param name="directory">Каталог, индекс которого необходимо обновить.</param>
     void Refresh(string directory);
 }
 
@@ -34,11 +33,16 @@ internal sealed class ConversationIndexWriter : IConversationIndexWriter
     private const string IndexFileName = "_index.md";
     private readonly IFileSystem _fileSystem;
 
+    /// <summary>Создаёт средство записи индекса разговоров.</summary>
+    /// <param name="fileSystem">Файловая система.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> равен <see langword="null"/>.</exception>
     public ConversationIndexWriter(IFileSystem fileSystem)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
+    /// <summary>Перестраивает индекс разговоров указанного каталога.</summary>
+    /// <param name="directory">Каталог, содержащий Markdown-файлы разговоров.</param>
     public void Refresh(string directory)
     {
         string year = Directory.GetParent(directory)?.Name ?? string.Empty;
@@ -48,8 +52,7 @@ internal sealed class ConversationIndexWriter : IConversationIndexWriter
 
         IEnumerable<string> files = _fileSystem
             .EnumerateFiles(directory, "*.md", SearchOption.TopDirectoryOnly)
-            .Where(path => !string.Equals(
-                Path.GetFileName(path), IndexFileName, StringComparison.OrdinalIgnoreCase))
+            .Where(path => !string.Equals(Path.GetFileName(path), IndexFileName, StringComparison.OrdinalIgnoreCase))
             .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
 
         StringBuilder contents = new();
@@ -69,9 +72,7 @@ internal sealed class ConversationIndexWriter : IConversationIndexWriter
     }
 }
 
-/// <summary>
-/// Экземплярный сервис синхронизации Markdown-файлов.
-/// </summary>
+/// <summary>Экземплярный сервис синхронизации Markdown-файлов.</summary>
 internal sealed class FileSynchronizerService : IFileSynchronizer
 {
     /// <summary>Средство чтения метаданных.</summary>
@@ -84,18 +85,21 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
     private readonly IFileSystem _fileSystem;
     /// <summary>Индекс разговоров.</summary>
     private readonly IConversationIndex _conversationIndex;
+    /// <summary>Средство обновления файла индекса каталога.</summary>
     private readonly IConversationIndexWriter _conversationIndexWriter;
+    /// <summary>Ошибки, возникшие во время текущей операции синхронизации.</summary>
     private readonly List<ExportError> _operationErrors = new();
+    /// <summary>Объект блокировки, обеспечивающий последовательное выполнение синхронизации.</summary>
     private static readonly object SynchronizationLock = new();
 
-    /// <summary>
-    /// Инициализирует новый экземпляр <see cref="FileSynchronizerService"/>.
-    /// </summary>
+    /// <summary>Инициализирует новый экземпляр <see cref="FileSynchronizerService"/>.</summary>
     /// <param name="metadataReader">Средство чтения метаданных.</param>
     /// <param name="logger">Журналировщик.</param>
-    /// <param name="uniqueFileNameProvider">Провайдер уникальных имен.</param>
+    /// <param name="uniqueFileNameProvider">Провайдер уникальных имён.</param>
     /// <param name="fileSystem">Система файловых операций.</param>
-    /// <param name="conversationIndex">Индекс разговоров (необязательно).</param>
+    /// <param name="conversationIndex">Индекс разговоров. Если не задан, создаётся стандартный индекс.</param>
+    /// <param name="conversationIndexWriter">Средство записи индекса разговоров. Если не задано, создаётся стандартное средство записи.</param>
+    /// <exception cref="ArgumentNullException">Один из обязательных параметров равен <see langword="null"/>.</exception>
     public FileSynchronizerService(
         IChatMetadataReader metadataReader,
         IArchivistLogger logger,
@@ -104,18 +108,11 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         IConversationIndex? conversationIndex = null,
         IConversationIndexWriter? conversationIndexWriter = null)
     {
-        _metadataReader = metadataReader
-            ?? throw new ArgumentNullException(nameof(metadataReader));
-        _logger = logger
-            ?? throw new ArgumentNullException(nameof(logger));
-        _uniqueFileNameProvider = uniqueFileNameProvider
-            ?? throw new ArgumentNullException(nameof(uniqueFileNameProvider));
-        _fileSystem = fileSystem
-            ?? throw new ArgumentNullException(nameof(fileSystem));
-        _conversationIndex = conversationIndex ?? new ConversationIndex(
-            fileSystem,
-            metadataReader,
-            logger);
+        _metadataReader = metadataReader ?? throw new ArgumentNullException(nameof(metadataReader));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _uniqueFileNameProvider = uniqueFileNameProvider ?? throw new ArgumentNullException(nameof(uniqueFileNameProvider));
+        _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+        _conversationIndex = conversationIndex ?? new ConversationIndex(fileSystem, metadataReader, logger);
         _conversationIndexWriter = conversationIndexWriter ?? new ConversationIndexWriter(fileSystem);
     }
 
@@ -144,6 +141,8 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Обновляет индекс каталога после успешного добавления или обновления файла.</summary>
+    /// <param name="result">Результат операции синхронизации.</param>
     private void RefreshConversationIndex(FileOperationResult result)
     {
         if (result.Status is not (FileOperationStatus.Added or FileOperationStatus.Updated))
@@ -159,11 +158,19 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         _conversationIndexWriter.Refresh(directory);
     }
 
+    /// <summary>Добавляет накопленные ошибки операции к результату синхронизации.</summary>
+    /// <param name="result">Исходный результат операции.</param>
+    /// <returns>Результат с добавленными ошибками или исходный результат, если ошибок нет.</returns>
     private FileOperationResult AttachOperationErrors(FileOperationResult result) =>
         _operationErrors.Count == 0
             ? result
             : result with { Errors = _operationErrors.ToArray() };
 
+    /// <summary>Выполняет основную логику синхронизации файла.</summary>
+    /// <param name="sourceFilePath">Путь к исходному файлу.</param>
+    /// <param name="destinationFilePath">Путь к целевому файлу.</param>
+    /// <param name="sourceMetadata">Метаданные исходного файла.</param>
+    /// <returns>Результат операции синхронизации.</returns>
     private FileOperationResult SynchronizeCore(
         string sourceFilePath,
         string destinationFilePath,
@@ -190,6 +197,10 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         return AddIndexErrors(result, indexReadErrors);
     }
 
+    /// <summary>Подготавливает индекс целевого каталога и подсчитывает ошибки его чтения.</summary>
+    /// <param name="destinationFilePath">Путь к целевому файлу.</param>
+    /// <param name="indexReadErrors">Количество ошибок чтения индекса, возникших при подготовке.</param>
+    /// <returns>Путь к каталогу назначения.</returns>
     private string PrepareDestinationIndex(
         string destinationFilePath,
         out int indexReadErrors)
@@ -203,6 +214,11 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         return destinationDirectory;
     }
 
+    /// <summary>Синхронизирует файл, для которого идентификатор разговора отсутствует.</summary>
+    /// <param name="sourceFilePath">Путь к исходному файлу.</param>
+    /// <param name="destinationFilePath">Путь к целевому файлу.</param>
+    /// <param name="sourceMetadata">Метаданные исходного файла.</param>
+    /// <returns>Результат операции синхронизации.</returns>
     private FileOperationResult SynchronizeWithoutConversationId(
         string sourceFilePath,
         string destinationFilePath,
@@ -269,6 +285,10 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         return result;
     }
 
+    /// <summary>Добавляет количество ошибок чтения индекса к результату операции.</summary>
+    /// <param name="result">Результат операции.</param>
+    /// <param name="indexReadErrors">Количество ошибок чтения индекса.</param>
+    /// <returns>Результат с указанным количеством ошибок индекса.</returns>
     private static FileOperationResult AddIndexErrors(
         FileOperationResult result,
         int indexReadErrors) =>
@@ -276,6 +296,13 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
             ? result
             : result with { IndexReadErrors = indexReadErrors };
 
+    /// <summary>Синхронизирует все версии одного разговора.</summary>
+    /// <param name="sourceFilePath">Путь к исходному файлу.</param>
+    /// <param name="destinationFilePath">Предполагаемый путь к целевому файлу.</param>
+    /// <param name="sourceMetadata">Метаданные исходного файла.</param>
+    /// <param name="sourceConversationId">Идентификатор разговора.</param>
+    /// <param name="destinationDirectory">Каталог назначения.</param>
+    /// <returns>Результат операции синхронизации.</returns>
     private FileOperationResult SynchronizeConversation(
         string sourceFilePath,
         string destinationFilePath,
@@ -399,6 +426,12 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Копирует разговор в целевой путь с обработкой конфликтов имени.</summary>
+    /// <param name="sourceFilePath">Путь к исходному файлу.</param>
+    /// <param name="destinationFilePath">Предполагаемый путь к целевому файлу.</param>
+    /// <param name="sourceConversationId">Идентификатор исходного разговора.</param>
+    /// <param name="sourceMetadata">Метаданные исходного файла.</param>
+    /// <returns>Фактический путь, по которому скопирован файл.</returns>
     private string CopyConversationToDestination(
         string sourceFilePath,
         string destinationFilePath,
@@ -441,6 +474,10 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         return CopyToUniqueNamePath(sourceFilePath, destinationFilePath);
     }
 
+    /// <summary>Копирует файл по уникальному пути, если исходный путь назначения занят.</summary>
+    /// <param name="sourceFilePath">Путь к исходному файлу.</param>
+    /// <param name="destinationFilePath">Базовый путь назначения.</param>
+    /// <returns>Фактический путь скопированного файла.</returns>
     private string CopyToUniqueNamePath(
         string sourceFilePath,
         string destinationFilePath)
@@ -462,6 +499,9 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Перемещает устаревшие версии во временные файлы перед заменой.</summary>
+    /// <param name="stalePaths">Пути к устаревшим версиям.</param>
+    /// <param name="stagedFiles">Коллекция перемещённых файлов для последующего отката или удаления.</param>
     private void StageStaleVersions(
         IEnumerable<string> stalePaths,
         ICollection<StagedFile> stagedFiles)
@@ -480,6 +520,9 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Восстанавливает временно перемещённые файлы при неудаче синхронизации.</summary>
+    /// <param name="stagedFiles">Файлы, перемещённые во временное хранилище.</param>
+    /// <param name="newFilePath">Путь к новому файлу, который следует удалить при откате.</param>
     private void RollbackStagedFiles(
         IEnumerable<StagedFile> stagedFiles,
         string? newFilePath)
@@ -498,6 +541,8 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Удаляет временные копии устаревших файлов после успешной операции.</summary>
+    /// <param name="stagedFiles">Файлы, перемещённые во временное хранилище.</param>
     private void CleanupStagedFiles(IEnumerable<StagedFile> stagedFiles)
     {
         foreach (StagedFile staged in stagedFiles)
@@ -517,8 +562,14 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Описывает исходный и временный путь перемещённого файла.</summary>
+    /// <param name="OriginalPath">Исходный путь файла.</param>
+    /// <param name="BackupPath">Путь временной копии файла.</param>
     private sealed record StagedFile(string OriginalPath, string BackupPath);
 
+    /// <summary>Приводит дату обновления к UTC с точностью до миллисекунды.</summary>
+    /// <param name="updateTime">Дата обновления или <see langword="null"/>.</param>
+    /// <returns>Нормализованная дата обновления.</returns>
     private static DateTimeOffset NormalizeUpdateTime(DateTimeOffset? updateTime)
     {
         DateTimeOffset utc = (updateTime ?? default).ToUniversalTime();
@@ -526,6 +577,9 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         return new DateTimeOffset(ticks, TimeSpan.Zero);
     }
 
+    /// <summary>Удаляет указанные устаревшие версии и исключает их из индекса.</summary>
+    /// <param name="stalePaths">Пути к устаревшим версиям.</param>
+    /// <param name="preservedPath">Путь, который нельзя удалять.</param>
     private void DeleteStaleVersions(
         IEnumerable<string> stalePaths,
         string? preservedPath)
@@ -582,6 +636,8 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Записывает результат операции в журнал.</summary>
+    /// <param name="result">Результат операции синхронизации.</param>
     private void WriteOperationResult(FileOperationResult result)
     {
         string sourceFileName = Path.GetFileName(result.SourcePath);
@@ -730,6 +786,9 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
         }
     }
 
+    /// <summary>Добавляет ошибку чтения целевого файла, если она ещё не была зарегистрирована индексом.</summary>
+    /// <param name="path">Путь к проблемному файлу.</param>
+    /// <param name="exception">Исключение, описывающее ошибку чтения.</param>
     private void AddDestinationErrorIfNew(string path, Exception exception)
     {
         if (_conversationIndex.HasReadError(path))

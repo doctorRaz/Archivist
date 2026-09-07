@@ -4,14 +4,18 @@ using dRz.GPT_Utilities.Archivist.Files;
 
 namespace dRz.GPT_Utilities.Archivist.Export;
 
-/// <summary>
-/// Реализация распаковки ZIP-архивов для локальной файловой системы.
-/// </summary>
+/// <summary>Распаковывает ZIP-архивы во временные каталоги.</summary>
 internal sealed class ZipArchiveExtractor : IArchiveExtractor
 {
+    /// <summary>Кодировка имён записей ZIP-архива.</summary>
     private readonly Encoding _entryNameEncoding;
+    /// <summary>Абстракция файловой системы.</summary>
     private readonly IFileSystem _fileSystem;
 
+    /// <summary>Создаёт распаковщик ZIP-архивов.</summary>
+    /// <param name="entryNameEncoding">Кодировка имён записей архива.</param>
+    /// <param name="fileSystem">Файловая система.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> равен <see langword="null"/>.</exception>
     public ZipArchiveExtractor(
         Encoding entryNameEncoding,
         IFileSystem fileSystem)
@@ -21,6 +25,10 @@ internal sealed class ZipArchiveExtractor : IArchiveExtractor
             ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
+    /// <summary>Распаковывает архив во временный каталог и возвращает найденные Markdown-файлы.</summary>
+    /// <param name="archive">ZIP-архив для распаковки.</param>
+    /// <returns>Представление распакованного архива.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="archive"/> равен <see langword="null"/>.</exception>
     public ExtractedArchive Extract(FileInfo archive)
     {
         ArgumentNullException.ThrowIfNull(archive);
@@ -42,20 +50,12 @@ internal sealed class ZipArchiveExtractor : IArchiveExtractor
         }
         catch
         {
-            // Если распаковка не завершилась, временный каталог всё равно
-            // должен быть удалён до передачи исключения вызывающему коду.
             try
             {
                 _fileSystem.DeleteDirectory(directory, recursive: true);
             }
-            catch (IOException)
-            {
-                // Первичное исключение важнее ошибки очистки.
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // Первичное исключение важнее ошибки очистки.
-            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
 
             throw;
         }
