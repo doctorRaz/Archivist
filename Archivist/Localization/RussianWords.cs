@@ -1,13 +1,13 @@
 ﻿namespace dRz.GPT_Utilities.Archivist.Localization
 {
-    /// <summary> The RussianWords </summary>
+    /// <summary>Набор русских существительных, используемых для форматирования статистики.</summary>
     public static class RussianWords
     {
-        /// <summary>The archives</summary>
+        /// <summary>Формы существительного «архив».</summary>
         public static readonly RussianPluralForms Archives =
             new("архив", "архива", "архивов");
 
-        /// <summary>The files</summary>
+        /// <summary>Формы существительного «файл».</summary>
         public static readonly RussianPluralForms Files =
             new("файл", "файла", "файлов");
     }
