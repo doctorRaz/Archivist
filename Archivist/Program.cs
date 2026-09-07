@@ -16,6 +16,9 @@ namespace dRz.GPT_Utilities.Archivist
     internal static class Program
     {
         //[STAThread]
+        /// <summary>Запускает приложение Archivist.</summary>
+        /// <param name="args">Аргументы командной строки.</param>
+        /// <returns>Код завершения приложения.</returns>
         private static int Main(string[] args)
         {
             ConfigureApplication();
@@ -71,6 +74,7 @@ namespace dRz.GPT_Utilities.Archivist
             }
         }
 
+        /// <summary>Настраивает глобальные параметры приложения перед запуском.</summary>
         private static void ConfigureApplication()
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -80,6 +84,7 @@ namespace dRz.GPT_Utilities.Archivist
 
 #if DEBUG
 
+        /// <summary>Запускает отладчик, если процесс ещё не подключён к отладчику.</summary>
         private static void LaunchDebugger()
         {
             if (!System.Diagnostics.Debugger.IsAttached)
