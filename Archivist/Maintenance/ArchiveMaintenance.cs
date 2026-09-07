@@ -20,9 +20,13 @@ internal sealed class ArchiveMaintenanceResult
 /// <summary>Нормализует существующий vault и перестраивает навигационные индексы.</summary>
 internal sealed class ArchiveMaintenance
 {
+    /// <summary>Имя файла индекса каталога.</summary>
     private const string IndexFileName = "_index.md";
+    /// <summary>Абстракция файловой системы.</summary>
     private readonly IFileSystem _fileSystem;
+    /// <summary>Средство нормализации имён файлов.</summary>
     private readonly IFileNameNormalizer _normalizer;
+    /// <summary>Средство перестроения индексов каталогов.</summary>
     private readonly DirectoryIndexWriter _indexWriter;
 
     /// <summary>Создаёт средство обслуживания архива.</summary>
