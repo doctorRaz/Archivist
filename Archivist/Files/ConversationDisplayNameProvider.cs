@@ -7,11 +7,17 @@ internal sealed class ConversationDisplayNameProvider
 {
     private readonly IChatMetadataReader _metadataReader;
 
+    /// <summary>Создаёт источник отображаемых имён разговоров.</summary>
+    /// <param name="metadataReader">Средство чтения метаданных разговоров.</param>
     public ConversationDisplayNameProvider(IChatMetadataReader metadataReader)
     {
         _metadataReader = metadataReader ?? throw new ArgumentNullException(nameof(metadataReader));
     }
 
+    /// <summary>Возвращает отображаемое имя разговора по его метаданным или запасному имени.</summary>
+    /// <param name="path">Путь к Markdown-файлу разговора.</param>
+    /// <param name="fallback">Имя, используемое при отсутствии подходящего alias или title.</param>
+    /// <returns>Отображаемое имя разговора.</returns>
     public string Get(string path, string fallback)
     {
         try
