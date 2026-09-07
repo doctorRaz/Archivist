@@ -50,9 +50,18 @@ internal sealed class UniqueFileNameProvider : IUniqueFileNameProvider
     /// <summary>Максимальное количество попыток подбора суффикса.</summary>
     private const int MaxDuplicateNumber = 100;
 
+    /// <summary>Возвращает уникальный путь без дополнительных исключаемых путей.</summary>
+    /// <param name="filePath">Путь к файлу.</param>
+    /// <returns>Уникальный путь.</returns>
     public string GetUnique(string filePath)
         => GetUnique(filePath, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
+    /// <summary>Возвращает уникальный путь с учётом заданных исключаемых путей.</summary>
+    /// <param name="filePath">Путь к файлу.</param>
+    /// <param name="excludedPaths">Набор путей, которые также считаются занятыми.</param>
+    /// <returns>Уникальный путь.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="excludedPaths"/> равен <see langword="null"/>.</exception>
+    /// <exception cref="IOException">Не удалось подобрать свободное имя.</exception>
     public string GetUnique(
         string filePath,
         IReadOnlySet<string> excludedPaths)
@@ -85,6 +94,9 @@ internal sealed class UniqueFileNameProvider : IUniqueFileNameProvider
             $"Заняты варианты от (1) до ({MaxDuplicateNumber}).");
     }
 
+    /// <summary>Возвращает существующие файлы-дубликаты для указанного пути.</summary>
+    /// <param name="filePath">Путь к исходному файлу.</param>
+    /// <returns>Перечисление существующих путей-дубликатов.</returns>
     public IEnumerable<string> GetExistingDuplicates(string filePath)
     {
         string directory = GetDirectory(filePath);
