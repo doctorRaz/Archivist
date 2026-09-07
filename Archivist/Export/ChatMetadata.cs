@@ -3,33 +3,31 @@ using YamlDotNet.Serialization;
 
 namespace dRz.GPT_Utilities.Archivist.Export
 {
-    /// <summary>
-    /// Метаданные Markdown-файла из экспорта ChatGPT.
-    /// </summary>
+    /// <summary>Метаданные Markdown-файла из экспорта ChatGPT.</summary>
     internal sealed class ChatMetadata
     {
         /// <summary>Дата и время создания разговора.</summary>
         public DateTimeOffset CreateTime { get; set; }
 
-        /// <summary>Исходное текстовое представление create_time.</summary>
+        /// <summary>Исходное текстовое представление <c>create_time</c>.</summary>
         [YamlIgnore]
         internal string? CreateTimeText { get; set; }
 
         /// <summary>Дата и время последнего изменения разговора.</summary>
         public DateTimeOffset? UpdateTime { get; set; }
 
-        /// <summary>Исходное текстовое представление update_time.</summary>
+        /// <summary>Исходное текстовое представление <c>update_time</c>.</summary>
         [YamlIgnore]
         internal string? UpdateTimeText { get; set; }
 
-        /// <summary>Было ли поле update_time прочитано из исходного YAML.</summary>
+        /// <summary>Признак наличия поля <c>update_time</c> в исходном YAML.</summary>
         [YamlIgnore]
         internal bool HasUpdateTime { get; set; }
 
-        /// <summary>Модель ChatGPT.</summary>
+        /// <summary>Идентификатор модели ChatGPT.</summary>
         public string? Model { get; set; }
 
-        /// <summary>Имя модели ChatGPT.</summary>
+        /// <summary>Отображаемое имя модели ChatGPT.</summary>
         public string? ModelName { get; set; }
 
         /// <summary>Дата экспорта.</summary>
@@ -41,39 +39,40 @@ namespace dRz.GPT_Utilities.Archivist.Export
         /// <summary>Название разговора.</summary>
         public string? Title { get; set; }
 
-        /// <summary>Теги.</summary>
+        /// <summary>Теги разговора.</summary>
         public List<string?> Tags { get; set; } = new();
 
-        /// <summary>Было ли поле tags прочитано из исходного YAML.</summary>
+        /// <summary>Признак наличия поля <c>tags</c> в исходном YAML.</summary>
         [YamlIgnore]
         internal bool HasTags { get; set; }
 
-        /// <summary>Псевдонимы.</summary>
+        /// <summary>Псевдонимы разговора.</summary>
         public List<string?> Aliases { get; set; } = new();
 
-        /// <summary>Было ли поле aliases прочитано из исходного YAML.</summary>
+        /// <summary>Признак наличия поля <c>aliases</c> в исходном YAML.</summary>
         [YamlIgnore]
         internal bool HasAliases { get; set; }
 
+        /// <summary>
+        /// Возвращает дату экспорта, преобразованную из строкового значения <see cref="DateExport"/>.
+        /// </summary>
         [YamlIgnore]
         public DateTime? ExportDateTime
         {
             get
             {
                 if (string.IsNullOrWhiteSpace(DateExport))
-                {
                     return null;
-                }
-                return DateTime.ParseExact(DateExport,
-                                            "yyyy-MM-dd'T'HH-mm-ss",
-                                            CultureInfo.InvariantCulture);
+                return DateTime.ParseExact(
+                    DateExport,
+                    "yyyy-MM-dd'T'HH-mm-ss",
+                    CultureInfo.InvariantCulture);
             }
         }
 
         /// <summary>
-        /// Уникальный идентификатор conversation.
-        /// Если значение было прочитано из YAML, оно имеет приоритет.
-        /// Иначе идентификатор получается из ChatLink.
+        /// Уникальный идентификатор разговора.
+        /// Явно заданное значение имеет приоритет; если оно отсутствует, идентификатор извлекается из <see cref="ChatLink"/>.
         /// </summary>
         [YamlIgnore]
         public Guid? ConversationId
@@ -84,32 +83,23 @@ namespace dRz.GPT_Utilities.Archivist.Export
 
         private Guid? _conversationId;
 
+        /// <summary>Извлекает идентификатор разговора из ссылки ChatGPT.</summary>
+        /// <param name="chatLink">Ссылка вида <c>https://chatgpt.com/c/&lt;guid&gt;</c>.</param>
+        /// <returns>Идентификатор разговора или <see langword="null"/>, если ссылка не соответствует ожидаемому формату.</returns>
         private static Guid? ParseConversationId(string? chatLink)
         {
             if (string.IsNullOrWhiteSpace(chatLink))
-            {
                 return null;
-            }
-
             if (!Uri.TryCreate(chatLink, UriKind.Absolute, out Uri? uri) ||
                 !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(uri.Host, "chatgpt.com", StringComparison.OrdinalIgnoreCase))
-            {
                 return null;
-            }
 
-            string[] segments = uri.AbsolutePath.Split(
-                '/',
-                StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length != 2 ||
-                !string.Equals(segments[0], "c", StringComparison.OrdinalIgnoreCase))
-            {
+            string[] segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length != 2 || !string.Equals(segments[0], "c", StringComparison.OrdinalIgnoreCase))
                 return null;
-            }
 
-            return Guid.TryParse(segments[1], out Guid id)
-                ? id
-                : null;
+            return Guid.TryParse(segments[1], out Guid id) ? id : null;
         }
     }
 }
