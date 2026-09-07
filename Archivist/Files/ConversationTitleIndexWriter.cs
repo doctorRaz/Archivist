@@ -7,8 +7,11 @@ namespace dRz.GPT_Utilities.Archivist.Files;
 /// <summary>Создаёт файл <c>_index.md</c>, используя aliases, title или имя файла.</summary>
 internal sealed class ConversationTitleIndexWriter : IConversationIndexWriter
 {
+    /// <summary>Имя файла индекса разговоров.</summary>
     private const string IndexFileName = "_index.md";
+    /// <summary>Абстракция файловой системы.</summary>
     private readonly IFileSystem _fileSystem;
+    /// <summary>Средство получения отображаемого имени разговора.</summary>
     private readonly ConversationDisplayNameProvider _displayNameProvider;
 
     /// <summary>Создаёт средство записи индекса разговоров.</summary>
