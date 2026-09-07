@@ -2,11 +2,10 @@
 
 namespace dRz.GPT_Utilities.Archivist.CommandLine
 {
+    /// <summary>Выводит справочную информацию по использованию Archivist.</summary>
     internal class CommandLineHelp
     {
-        /// <summary>
-        /// Выводит справку по использованию программы.
-        /// </summary>
+        /// <summary>Выводит справку по использованию программы.</summary>
         public static void Print()
         {
             ConsoleWriter.Info("""
