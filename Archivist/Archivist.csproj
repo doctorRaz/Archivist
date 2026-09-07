@@ -10,6 +10,7 @@
 		<Description>Перемещает ZIP файлы экспорта chatgpt-export-markdown в соответствующие каталоги</Description>
 		<ApplicationIcon>Refresh.ico</ApplicationIcon>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<!--================= Рабочая сборка ==========================-->
 		<Version>0.4</Version>
 		<!--===========================================-->
