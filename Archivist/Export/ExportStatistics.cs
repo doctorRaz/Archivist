@@ -92,10 +92,8 @@ internal sealed class ExportStatistics
 
     /// <summary>Добавляет статистику другого аккумулятора.</summary>
     /// <param name="statistics">Статистика отдельного архива или этапа обработки.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="statistics"/> равен <see langword="null"/>.</exception>
     public void Add(ExportStatistics statistics)
     {
-        ArgumentNullException.ThrowIfNull(statistics);
         Total += statistics.Total;
         Skipped += statistics.Skipped;
         Added += statistics.Added;
