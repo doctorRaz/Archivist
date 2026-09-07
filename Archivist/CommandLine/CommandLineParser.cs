@@ -64,8 +64,8 @@
 
             return new CommandLineOptions
             {
-                SourceDirectory = sourceDirectory,
-                DestinationDirectory = destinationDirectory,
+                SourceDirectory = sourceDirectory ?? string.Empty,
+                DestinationDirectory = destinationDirectory ?? string.Empty,
                 MaintenanceDirectory = maintenanceDirectory ?? string.Empty,
                 ExtractAll = extractAll,
                 ZipFilePattern = zipFilePattern ?? string.Empty
