@@ -6,7 +6,9 @@ namespace dRz.GPT_Utilities.Archivist.Export;
 /// <remarks>Изменяется во время обработки; наружу преобразуется в неизменяемый <see cref="ExportResult"/>.</remarks>
 internal sealed class ExportStatistics
 {
+    /// <summary>Ошибки обработки архивов.</summary>
     private readonly List<ExportError> _archiveErrors = new();
+    /// <summary>Ошибки обработки Markdown-файлов.</summary>
     private readonly List<ExportError> _markdownErrors = new();
 
     /// <summary>Общее количество обработанных файлов и зарегистрированных ошибок файлов.</summary>
