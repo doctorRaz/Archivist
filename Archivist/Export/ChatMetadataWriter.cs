@@ -18,10 +18,12 @@ internal interface IChatMetadataWriter
 /// <summary>Сериализует метаданные разговора и заменяет YAML front matter файла.</summary>
 internal sealed class ChatMetadataWriter : IChatMetadataWriter
 {
+    /// <summary>Регулярное выражение для заключения отдельных скалярных значений YAML в двойные кавычки.</summary>
     private static readonly Regex QuotedScalarRegex = new(
         @"^(create_time|update_time|conversation_id): (.*)$",
         RegexOptions.Compiled | RegexOptions.Multiline);
 
+    /// <summary>Файловая система для чтения и записи Markdown-файлов.</summary>
     private readonly IFileSystem _fileSystem;
 
     /// <summary>Создаёт средство записи метаданных.</summary>
