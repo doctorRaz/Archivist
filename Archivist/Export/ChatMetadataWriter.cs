@@ -6,14 +6,16 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace dRz.GPT_Utilities.Archivist.Export;
 
-/// <summary>
-/// Записывает десериализованные метаданные обратно в YAML front matter Markdown-файла.
-/// </summary>
+/// <summary>Записывает метаданные обратно в YAML front matter Markdown-файла.</summary>
 internal interface IChatMetadataWriter
 {
+    /// <summary>Записывает метаданные в указанный Markdown-файл.</summary>
+    /// <param name="filePath">Путь к Markdown-файлу.</param>
+    /// <param name="metadata">Метаданные разговора.</param>
     void Write(string filePath, ChatMetadata metadata);
 }
 
+/// <summary>Сериализует метаданные разговора и заменяет YAML front matter файла.</summary>
 internal sealed class ChatMetadataWriter : IChatMetadataWriter
 {
     private static readonly Regex QuotedScalarRegex = new(
@@ -22,11 +24,19 @@ internal sealed class ChatMetadataWriter : IChatMetadataWriter
 
     private readonly IFileSystem _fileSystem;
 
+    /// <summary>Создаёт средство записи метаданных.</summary>
+    /// <param name="fileSystem">Файловая система для чтения и записи Markdown-файла.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> равен <see langword="null"/>.</exception>
     public ChatMetadataWriter(IFileSystem fileSystem)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
     }
 
+    /// <summary>Заменяет YAML front matter файла сериализованными метаданными.</summary>
+    /// <param name="filePath">Путь к Markdown-файлу.</param>
+    /// <param name="metadata">Метаданные разговора.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="metadata"/> равен <see langword="null"/>.</exception>
+    /// <exception cref="FormatException">В файле отсутствует YAML front matter.</exception>
     public void Write(string filePath, ChatMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
@@ -43,6 +53,9 @@ internal sealed class ChatMetadataWriter : IChatMetadataWriter
             $"---{Environment.NewLine}{yaml}---{Environment.NewLine}{body}");
     }
 
+    /// <summary>Сериализует метаданные в YAML с правилами форматирования Archivist.</summary>
+    /// <param name="metadata">Метаданные разговора.</param>
+    /// <returns>Сериализованное YAML-представление.</returns>
     private static string Serialize(ChatMetadata metadata)
     {
         var serializer = new SerializerBuilder()
@@ -58,14 +71,11 @@ internal sealed class ChatMetadataWriter : IChatMetadataWriter
             model["aliases"] = metadata.Aliases;
         if (metadata.HasTags)
             model["tags"] = metadata.Tags;
-
         model["create_time"] = metadata.CreateTimeText ??
             metadata.CreateTime.ToString("O", CultureInfo.InvariantCulture);
-
         if (metadata.HasUpdateTime && metadata.UpdateTime is not null)
             model["update_time"] = metadata.UpdateTimeText ??
                 metadata.UpdateTime.Value.ToString("O", CultureInfo.InvariantCulture);
-
         if (metadata.Model is not null)
             model["model"] = metadata.Model;
         if (metadata.ModelName is not null)
