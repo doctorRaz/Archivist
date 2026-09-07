@@ -11,6 +11,7 @@ namespace dRz.GPT_Utilities.Archivist.Export
     /// <summary>Читает метаданные разговора из YAML front matter Markdown-файла.</summary>
     internal sealed class ChatMetadataReader : IChatMetadataReader
     {
+        /// <summary>Десериализатор YAML с соглашением об именах полей через подчёркивание.</summary>
         private static readonly IDeserializer YamlDeserializer =
             new DeserializerBuilder()
                 .WithNamingConvention(UnderscoredNamingConvention.Instance)
@@ -22,6 +23,7 @@ namespace dRz.GPT_Utilities.Archivist.Export
             @"\A---\s*\r?\n(?<yaml>.*?)\r?\n---\s*(?:\r?\n|$)",
             RegexOptions.Compiled | RegexOptions.Singleline);
 
+        /// <summary>Файловая система для чтения Markdown-файлов.</summary>
         private readonly IFileSystem _fileSystem;
 
         /// <summary>Создаёт средство чтения метаданных.</summary>
