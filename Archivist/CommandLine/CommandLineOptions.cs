@@ -5,9 +5,7 @@
     /// </summary>
     internal sealed class CommandLineOptions
     {
-        /// <summary>
-        /// Каталог, содержащий ZIP-архивы экспорта ChatGPT.
-        /// </summary>
+        /// <summary>Каталог, содержащий ZIP-архивы экспорта ChatGPT.</summary>
         public string SourceDirectory { get; init; } = string.Empty;
 
         /// <summary>
@@ -19,26 +17,22 @@
         /// <summary>Каталог vault для обслуживания.</summary>
         public string MaintenanceDirectory { get; init; } = string.Empty;
 
+        /// <summary>Возвращает признак запуска режима обслуживания vault.</summary>
         public bool IsMaintenance => !string.IsNullOrWhiteSpace(MaintenanceDirectory);
 
         /// <summary>
         /// Маска файлов ZIP-архивов, которые следует обрабатывать.
-        ///
-        /// Например: chatgpt-export-markdown*.zip
+        /// Например: <c>chatgpt-export-markdown*.zip</c>.
         /// </summary>
         public string ZipFilePattern { get; init; } = string.Empty;
 
         /// <summary>
         /// Признак обработки всех найденных архивов.
-        ///
-        /// false — обрабатывается только последний архив.
-        /// true  — обрабатываются все архивы.
+        /// <c>false</c> — обрабатывается только последний архив; <c>true</c> — все архивы.
         /// </summary>
         public bool ExtractAll { get; init; }
 
-        /// <summary>
-        /// Признак запроса справки.
-        /// </summary>
+        /// <summary>Признак запроса справки.</summary>
         public bool ShowHelp { get; init; }
     }
 }
