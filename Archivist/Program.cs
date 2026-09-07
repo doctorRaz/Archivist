@@ -12,6 +12,7 @@ namespace dRz.GPT_Utilities.Archivist
      * Processor занимается самой обработкой архивов.
     */
 
+    /// <summary>Точка входа и корень композиции приложения Archivist.</summary>
     internal static class Program
     {
         //[STAThread]
