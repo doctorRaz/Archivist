@@ -5,10 +5,15 @@ namespace dRz.GPT_Utilities.Archivist.Maintenance;
 /// <summary>Результат обслуживания существующего vault.</summary>
 internal sealed class ArchiveMaintenanceResult
 {
+    /// <summary>Количество проверенных Markdown-файлов.</summary>
     public int CheckedFiles { get; internal set; }
+    /// <summary>Количество переименованных файлов.</summary>
     public int RenamedFiles { get; internal set; }
+    /// <summary>Количество обнаруженных конфликтов имён.</summary>
     public int Conflicts { get; internal set; }
+    /// <summary>Количество обновлённых индексов каталогов.</summary>
     public int UpdatedIndexes { get; internal set; }
+    /// <summary>Количество ошибок обслуживания.</summary>
     public int Errors { get; internal set; }
 }
 
@@ -20,6 +25,10 @@ internal sealed class ArchiveMaintenance
     private readonly IFileNameNormalizer _normalizer;
     private readonly DirectoryIndexWriter _indexWriter;
 
+    /// <summary>Создаёт средство обслуживания архива.</summary>
+    /// <param name="fileSystem">Файловая система.</param>
+    /// <param name="normalizer">Средство нормализации имён.</param>
+    /// <param name="indexWriter">Средство перестроения индексов.</param>
     public ArchiveMaintenance(IFileSystem fileSystem, IFileNameNormalizer normalizer, DirectoryIndexWriter indexWriter)
     {
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
@@ -27,6 +36,11 @@ internal sealed class ArchiveMaintenance
         _indexWriter = indexWriter ?? throw new ArgumentNullException(nameof(indexWriter));
     }
 
+    /// <summary>Выполняет нормализацию файлов и перестраивает индексы vault.</summary>
+    /// <param name="rootDirectory">Корневой каталог vault.</param>
+    /// <returns>Результат обслуживания.</returns>
+    /// <exception cref="ArgumentException">Каталог не указан.</exception>
+    /// <exception cref="DirectoryNotFoundException">Каталог не существует.</exception>
     public ArchiveMaintenanceResult Run(string rootDirectory)
     {
         if (string.IsNullOrWhiteSpace(rootDirectory))
@@ -40,6 +54,9 @@ internal sealed class ArchiveMaintenance
         return result;
     }
 
+    /// <summary>Переименовывает файлы в соответствии с правилами нормализации.</summary>
+    /// <param name="root">Корневой каталог vault.</param>
+    /// <param name="result">Аккумулятор результатов обслуживания.</param>
     private void NormalizeFiles(string root, ArchiveMaintenanceResult result)
     {
         string[] files = _fileSystem.EnumerateFiles(root, "*", SearchOption.AllDirectories)
@@ -55,25 +72,15 @@ internal sealed class ArchiveMaintenance
         {
             string name = Path.GetFileNameWithoutExtension(source);
             string normalized = _normalizer.Normalize(name);
-            if (string.IsNullOrWhiteSpace(normalized))
-                normalized = name;
+            if (string.IsNullOrWhiteSpace(normalized)) normalized = name;
             string target = Path.Combine(Path.GetDirectoryName(source)!, normalized + Path.GetExtension(source));
-            if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
-                continue;
+            if (string.Equals(source, target, StringComparison.OrdinalIgnoreCase)) continue;
 
             if (occupied.Contains(target) || !targets.Add(target))
             {
                 result.Conflicts++;
-                try
-                {
-                    target = GetUniqueTarget(target, occupied, targets);
-                    _ = targets.Add(target);
-                }
-                catch (Exception exception)
-                {
-                    result.Errors++;
-                    continue;
-                }
+                try { target = GetUniqueTarget(target, occupied, targets); _ = targets.Add(target); }
+                catch (Exception) { result.Errors++; continue; }
             }
             moves.Add((source, target));
         }
@@ -87,26 +94,21 @@ internal sealed class ArchiveMaintenance
                 _fileSystem.MoveFile(source, temp);
                 temporary.Add((temp, target));
             }
-            catch (Exception)
-            {
-                result.Errors++;
-            }
+            catch (Exception) { result.Errors++; }
         }
-
         foreach ((string temp, string target) in temporary)
         {
-            try
-            {
-                _fileSystem.MoveFile(temp, target);
-                result.RenamedFiles++;
-            }
-            catch (Exception)
-            {
-                result.Errors++;
-            }
+            try { _fileSystem.MoveFile(temp, target); result.RenamedFiles++; }
+            catch (Exception) { result.Errors++; }
         }
     }
 
+    /// <summary>Подбирает свободное имя с числовым суффиксом.</summary>
+    /// <param name="path">Исходное целевое имя.</param>
+    /// <param name="occupied">Уже занятые пути.</param>
+    /// <param name="targets">Уже зарезервированные целевые пути.</param>
+    /// <returns>Свободный путь.</returns>
+    /// <exception cref="IOException">Не удалось найти свободное имя за 100 попыток.</exception>
     private static string GetUniqueTarget(string path, ISet<string> occupied, ISet<string> targets)
     {
         string directory = Path.GetDirectoryName(path)!;
@@ -115,8 +117,7 @@ internal sealed class ArchiveMaintenance
         for (int number = 1; number <= 100; number++)
         {
             string candidate = Path.Combine(directory, $"{stem} ({number}){extension}");
-            if (!occupied.Contains(candidate) && !targets.Contains(candidate))
-                return candidate;
+            if (!occupied.Contains(candidate) && !targets.Contains(candidate)) return candidate;
         }
         throw new IOException($"Не удалось подобрать свободное имя: {path}");
     }
