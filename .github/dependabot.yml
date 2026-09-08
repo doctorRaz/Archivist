@@ -15,4 +15,6 @@ updates:
       nuget-dependencies:
         patterns:
           - "*"
- 
+
+    ignore:
+      - dependency-name: "NUnit3TestAdapter"
