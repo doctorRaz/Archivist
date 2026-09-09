@@ -1,21 +1,75 @@
-﻿# GPT UTILITIES
+# GPT Utilities
 
-<details><summary>Legacy</summary>
+## Сборник утилит для работы с экспортом из ChatGPT
 
-The original implementation is preserved in the
-[`archive/legacy-gpt_utilities`](...) branch for historical reference.
+- [Archivist](./Archivist/README.md) — утилита для обработки Markdown-файлов, экспортированных с помощью **[chatgpt-exporter](https://github.com/pionxzh/chatgpt-exporter)**.
 
-The active development continues in `master` / `develop`.
+<details>
+<summary>Legacy</summary>
 
-</details> 
+Исторические проекты, которые больше не входят в текущую разработку, сохранены в ветке [`archive/legacy-GPT_Utilities`](https://github.com/doctorRaz/Archivist/tree/archive/legacy-GPT_Utilities).
 
-## Сборник утилит для работы с экспортом из ChatGPT 
+### MoveDuplicate
 
-- [Archivist](./Archivist/README.md) - утилита для обработки Markdown-файлов, экспортированных с помощью **[chatgpt-exporter](https://github.com/pionxzh/chatgpt-exporter)**.
-- [MoveDuplicates](./MoveDuplicate/README.md) - раскладывает дубликаты файлов по папкам
-- [ConvovizRenamer](./ConvovizRenamer/README.md) - из aliases восстанавливает имена файлов,\
- не актуально, см. мой фикс [Convoviz Fork](https://github.com/doctorRaz/convoviz/commit/a9463fda8b24debe60131365f5ecf2a5bbff7b30)
-- [NexusRenamer](./NexusRenamer/README.md) - утилита для переименования файлов в соответствии с #Title.\
-  Удаляет лишние символы, нормализует для имени файла.
-- [GPTJson2Md](./GPTJson2Md/README.md) разработка прекращена
-- 
+[README](https://github.com/doctorRaz/Archivist/blob/archive/legacy-GPT_Utilities/MoveDuplicate/README.md)
+
+Консольная утилита для автоматического перемещения файлов из корневого каталога в соответствующие подкаталоги по совпадению имени файла.
+
+Поддерживает:
+
+- рекурсивный поиск;
+- игнорирование префикса даты `yyyy-MM-dd_`;
+- сравнение файлов по `LastWriteTime` или `CreationTime`;
+- режим предварительной проверки `/dryrun`;
+- подробный вывод `/verbose`;
+- замену существующих файлов;
+- итоговую статистику и коды возврата.
+
+### ConvovizRenamer
+
+[README](https://github.com/doctorRaz/Archivist/blob/archive/legacy-GPT_Utilities/ConvovizRenamer/README.md)
+
+Утилита для обработки Markdown-файлов, экспортированных из **Convoviz**.
+
+Использует первый элемент YAML `aliases` как имя файла, синхронизирует YAML `title` и исправляет ссылки в `_index.md`.
+
+Поддерживает:
+
+- рекурсивную обработку каталогов;
+- переименование Markdown-файлов;
+- сохранение Unicode и кириллицы;
+- удаление недопустимых символов из имён файлов;
+- обнаружение конфликтов;
+- двухпроходную обработку;
+- исправление ссылок в `_index.md`.
+
+### NexusRenamer
+
+[README](https://github.com/doctorRaz/Archivist/blob/archive/legacy-GPT_Utilities/NexusRenamer/README.md)
+
+Утилита для исправления имён Markdown-файлов, экспортированных из **Nexus**.
+
+Переименовывает файлы по значению заголовка `# Title:` и исправляет соответствующие wiki-ссылки.
+
+Основной сценарий — подготовка экспорта ChatGPT/Nexus для дальнейшего использования в Obsidian и других Markdown-хранилищах.
+
+### GPTJson2Md
+
+[README](https://github.com/doctorRaz/Archivist/blob/archive/legacy-GPT_Utilities/Json2Md/README.md)
+
+Минималистичная консольная утилита для преобразования JSON-экспорта ChatGPT в Markdown.
+
+Основные возможности:
+
+- JSON → Markdown;
+- сохранение исходного текста и кода;
+- YAML frontmatter с метаданными;
+- имя файла в формате `YYYY-MM-DD_Название-чата.md`;
+- дата создания по первому сообщению;
+- дата изменения по последнему сообщению;
+- интерактивный режим;
+- импорт в Obsidian, Logseq и другие Markdown-хранилища.
+
+Разработка **GPTJson2Md** прекращена в августе 2026 года. Проект сохранён исключительно для исторических целей.
+
+</details>
