@@ -115,6 +115,7 @@ jobs:
       #   Archivist_0.5-release1  — идентификатор Release
       #   0.5.9748.10853         — версия бинарников
       - name: Create release archive
+        id: archive
         shell: pwsh
         env:
           FULL_VERSION: ${{ steps.version.outputs.full_version }}
