@@ -289,3 +289,34 @@ jobs:
             --title $releaseTitle `
             --notes-file release-notes.md `
             --verify-tag
+
+      # Получаем фактическое описание уже созданного GitHub Release.
+      # Именно оно является источником Markdown-файла внутри ZIP.
+      - name: Add release description to archive
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $archiveName = "Archivist_${env:FULL_VERSION}.zip"
+          $markdownName = "Archivist_${env:FULL_VERSION}.md"
+
+          # Читаем body непосредственно из GitHub Release, а не из release-notes.md.
+          gh release view $tag --json body --jq .body | Set-Content -LiteralPath $markdownName -Encoding utf8NoBOM
+
+          # Пересоздаём архив, добавляя к бинарникам точную копию описания Release.
+          Remove-Item -LiteralPath $archiveName -Force
+          Compress-Archive -Path publish/Archivist/*, $markdownName -DestinationPath $archiveName
+
+          # После изменения ZIP его SHA-256 изменился, поэтому обновляем update.json.
+          $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = Get-Content -LiteralPath update.json -Raw | ConvertFrom-Json
+          $manifest.sha256 = $sha256
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath update.json -Encoding utf8NoBOM
+
+          # Заменяем уже загруженные в Release версии ZIP и update.json.
+          gh release upload $tag $archiveName update.json --clobber
+
+          Write-Host "Added release description: $markdownName"
+          Write-Host "Final SHA-256: $sha256"
