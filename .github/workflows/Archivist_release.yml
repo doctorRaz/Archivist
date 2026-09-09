@@ -248,7 +248,7 @@ jobs:
           Get-Content -LiteralPath update.json
 
       # Генерируем стандартные GitHub release notes.
-      # В начало добавляем сообщение самого тега/коммита.
+      # В начало добавляем заголовок с именем тега и сообщение самого тега.
       - name: Generate release notes
         shell: pwsh
         env:
@@ -263,11 +263,15 @@ jobs:
           }
 
           $generated = gh api --method POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$env:GITHUB_REF_NAME" | ConvertFrom-Json
-          $body = $tagMessage
-          if ($generated.body) {
-              if ($body) { $body += "`r`n`r`n" }
-              $body += $generated.body
+
+          $body = "# $env:GITHUB_REF_NAME"
+          if ($tagMessage) {
+              $body += "`r`n`r`n$tagMessage"
           }
+          if ($generated.body) {
+              $body += "`r`n`r`n$($generated.body)"
+          }
+
           $body | Set-Content -Path release-notes.md -Encoding utf8NoBOM
 
       # Создаём GitHub Release.
