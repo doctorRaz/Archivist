@@ -1,1 +1,0 @@
-"..\!GPTJson2Md\bin\Release\GPTJson2Md.exe" -i "conversations.json" -o "SpecSPDS.wiki\GPT\out"
