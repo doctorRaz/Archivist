@@ -1,10 +1,26 @@
 name: Archivist Release
 
+# Workflow запускается ТОЛЬКО при push тега, имя которого начинается с Archivist_.
+#
+# Например:
+#   git tag Archivist_0.5
+#   git push origin Archivist_0.5
+#
+# ВАЖНО:
+# Тег и версия сборки — это разные вещи.
+#
+# Тег (GITHUB_REF_NAME) используется как идентификатор релиза.
+# Полная версия .NET-сборки получается из MSBuild и включает Build/Revision.
+# Поэтому тег остаётся коротким: Archivist_0.5,
+# а Release и ZIP получают полную версию, например:
+#   Archivist 0.5.9748.12345
+#   Archivist_0.5.9748.12345.zip
 on:
   push:
     tags:
       - 'Archivist_*'
 
+# Для создания GitHub Release workflow должен иметь право записывать содержимое репозитория.
 permissions:
   contents: write
 
@@ -14,32 +30,110 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # Забираем именно тот commit, на который указывает тег, запустивший workflow.
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Archivist собирается под .NET 6.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 6.0.x
 
+      # Восстанавливаем NuGet-зависимости один раз.
+      # Последующие build/test/publish используют --no-restore.
       - name: Restore
         run: dotnet restore GPT_Utilities.sln
 
-      - name: Verify shared build configuration
+      # Получаем ПОЛНУЮ версию, которую MSBuild назначит сборке.
+      #
+      # Откуда берутся части версии:
+      #
+      # 1. Archivist/Archivist.csproj содержит:
+      #       <Version>0.5</Version>
+      #
+      # 2. Directory.Build.props вычисляет:
+      #       Build    = количество дней от 01.01.2000 (UTC)
+      #       Revision = количество секунд от начала текущих суток / 2 (UTC)
+      #
+      # 3. Directory.Build.targets собирает из них:
+      #       FileVersion = $(Version).$(Build).$(Revision)
+      #
+      # Поэтому для текущего проекта получается версия вида:
+      #       0.5.Build.Revision
+      #
+      # Например:
+      #       0.5.9748.12345
+      #
+      # Мы читаем именно FileVersion. Он содержит ту же полную числовую
+      # версию, что AssemblyVersion, и безопасен для имени ZIP-файла.
+      #
+      # Этот шаг НИЧЕГО не записывает в csproj/props/targets и не изменяет
+      # исходный код. Он только получает вычисленное MSBuild значение
+      # и передаёт его следующим шагам через GITHUB_OUTPUT.
+      - name: Get full build version
+        id: version
         shell: pwsh
         run: |
-          dotnet msbuild Archivist/Archivist.csproj -getProperty:Version -getProperty:AssemblyVersion -getProperty:FileVersion -getProperty:InformationalVersion -getProperty:OutputPath
+          $result = dotnet msbuild Archivist/Archivist.csproj `
+            -getProperty:Version `
+            -getProperty:Build `
+            -getProperty:Revision `
+            -getProperty:AssemblyVersion `
+            -getProperty:FileVersion `
+            -getProperty:InformationalVersion `
+            -getProperty:OutputPath | ConvertFrom-Json
 
+          $version = $result.Properties.FileVersion
+
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'MSBuild did not return FileVersion.'
+          }
+
+          Write-Host "Base Version:            $($result.Properties.Version)"
+          Write-Host "Build:                   $($result.Properties.Build)"
+          Write-Host "Revision:                $($result.Properties.Revision)"
+          Write-Host "AssemblyVersion:         $($result.Properties.AssemblyVersion)"
+          Write-Host "FileVersion:             $($result.Properties.FileVersion)"
+          Write-Host "InformationalVersion:    $($result.Properties.InformationalVersion)"
+          Write-Host "OutputPath:              $($result.Properties.OutputPath)"
+
+          # Сохраняем значение между steps.
+          # После этого его можно получить как:
+          #   ${{ steps.version.outputs.full_version }}
+          "full_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Тестируем solution до публикации.
+      # Важно: версия не задаётся здесь отдельно — используется та же
+      # Directory.Build.props/targets, что и при обычной сборке проекта.
       - name: Test
         run: dotnet test GPT_Utilities.sln --configuration Release --no-restore --verbosity normal
 
+      # Публикуем Archivist.
+      # --self-contained false означает framework-dependent приложение:
+      # на компьютере пользователя должен быть установлен соответствующий .NET Runtime.
       - name: Publish Archivist
         run: dotnet publish Archivist/Archivist.csproj --configuration Release --no-restore --output publish/Archivist --self-contained false
 
+      # Создаём ZIP с полной версией сборки в имени.
+      #
+      # Например:
+      #   Archivist_0.5.9748.12345.zip
+      #
+      # Значение берётся из того же output, который получили в шаге
+      # "Get full build version", поэтому название архива точно соответствует
+      # FileVersion опубликованных DLL.
       - name: Create release archive
         shell: pwsh
-        run: Compress-Archive -Path publish/Archivist/* -DestinationPath "${env:GITHUB_REF_NAME}.zip"
+        env:
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+        run: |
+          $archiveName = "Archivist_${env:FULL_VERSION}.zip"
+          Compress-Archive -Path publish/Archivist/* -DestinationPath $archiveName
+          Write-Host "Created archive: $archiveName"
 
+      # Генерируем стандартные GitHub release notes.
+      # При этом первым блоком добавляем сообщение самого тега/коммита.
       - name: Generate release notes
         shell: pwsh
         env:
@@ -61,7 +155,33 @@ jobs:
           }
           $body | Set-Content -Path release-notes.md -Encoding utf8NoBOM
 
+      # Создаём GitHub Release.
+      #
+      # TAG:
+      #   GITHUB_REF_NAME = Archivist_0.5
+      #   Именно этот тег связывает Release с commit.
+      #
+      # TITLE:
+      #   Добавляем к короткому тегу полную FileVersion.
+      #   Получится, например:
+      #       Archivist_0.5 — Archivist 0.5.9748.12345
+      #
+      # ASSET:
+      #   Загружаем ZIP с тем же номером полной версии.
+      #
+      # Сам тег при этом НЕ переименовывается и НЕ создаётся второй тег.
+      # Это важно: workflow продолжает работать от исходного Archivist_* тега.
       - name: Create GitHub release
+        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" "${{ github.ref_name }}.zip" --title "${{ github.ref_name }}" --notes-file release-notes.md --verify-tag
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $archiveName = "Archivist_${env:FULL_VERSION}.zip"
+          $releaseTitle = "$tag — Archivist $($env:FULL_VERSION)"
+
+          gh release create $tag $archiveName `
+            --title $releaseTitle `
+            --notes-file release-notes.md `
+            --verify-tag
