@@ -28,10 +28,10 @@ jobs:
             8.0.x
 
       - name: Restore
-        run: dotnet restore GPT_Utilities.sln
+        run: dotnet restore Archivist.sln
 
       - name: Build
-        run: dotnet build GPT_Utilities.sln --configuration Release --no-restore
+        run: dotnet build Archivist.sln --configuration Release --no-restore
 
       - name: Test
-        run: dotnet test GPT_Utilities.sln --configuration Release --no-build --verbosity normal
+        run: dotnet test Archivist.sln --configuration Release --no-build --verbosity normal
