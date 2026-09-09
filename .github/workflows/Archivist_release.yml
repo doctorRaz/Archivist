@@ -48,11 +48,11 @@ jobs:
       # Восстанавливаем NuGet-зависимости один раз.
       # Последующие test/publish используют --no-restore.
       - name: Restore
-        run: dotnet restore GPT_Utilities.sln
+        run: dotnet restore Archivist.sln
 
       # Тестируем solution до публикации.
       - name: Test
-        run: dotnet test GPT_Utilities.sln --configuration Release --no-restore --verbosity normal
+        run: dotnet test Archivist.sln --configuration Release --no-restore --verbosity normal
 
       # Публикуем Archivist.
       #
