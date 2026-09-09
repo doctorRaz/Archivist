@@ -9,8 +9,8 @@ name: Archivist Release
 # Тег и версия бинарников — разные сущности.
 # Тег используется только как идентификатор GitHub Release.
 # Реальная версия сборки определяется ПОСЛЕ publish непосредственно из
-# опубликованного Archivist.dll. Поэтому версия в Release и имя ZIP всегда
-# соответствуют именно тому бинарнику, который попадает к пользователю.
+# опубликованного Archivist.dll. Поэтому версия в Release, ZIP и update.json
+# всегда соответствует именно тому бинарнику, который попадает к пользователю.
 on:
   push:
     tags:
@@ -74,7 +74,8 @@ jobs:
       # FileVersionInfo читает значение из уже сформированного PE-файла.
       # Поэтому если publish получил, например:
       #   0.5.9748.10853
-      # именно это значение попадёт в Release title и имя ZIP.
+      # именно это значение будет использовано в Release title, имени ZIP
+      # и update.json.
       #
       # Этот шаг НЕ изменяет DLL и НЕ пересобирает проект.
       - name: Read version from published binary
@@ -122,6 +123,55 @@ jobs:
           Compress-Archive -Path publish/Archivist/* -DestinationPath $archiveName
           Write-Host "Created archive: $archiveName"
 
+          # Контрольная сумма вычисляется именно для созданного ZIP.
+          # Она записывается в update.json и позволяет Updater проверить,
+          # что скачанный архив не повреждён и соответствует опубликованному файлу.
+          $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "SHA-256: $sha256"
+          "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Формируем update.json по зафиксированному контракту.
+      #
+      # Структура version намеренно состоит из отдельных int-полей:
+      #   major / minor / build / revision
+      # Это позволяет Updater сравнивать версии без разбора строки.
+      #
+      # mandatory для обычного release всегда false.
+      # Обязательность критического обновления будем управлять отдельно,
+      # не пересобирая сам продукт.
+      - name: Create update manifest
+        shell: pwsh
+        env:
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          SHA256: ${{ steps.archive.outputs.sha256 }}
+        run: |
+          $version = [System.Version]::Parse($env:FULL_VERSION)
+
+          if ($version.Revision -lt 0) {
+            throw "Revision is not available in version: $env:FULL_VERSION"
+          }
+
+          $manifest = [ordered]@{
+            product = 'Archivist'
+            version = [ordered]@{
+              major = $version.Major
+              minor = $version.Minor
+              build = $version.Build
+              revision = $version.Revision
+            }
+            tag = $env:GITHUB_REF_NAME
+            asset = "Archivist_$($env:FULL_VERSION).zip"
+            sha256 = $env:SHA256
+            mandatory = $false
+            minimumVersion = $null
+            publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          }
+
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path update.json -Encoding utf8NoBOM
+
+          Write-Host 'Generated update.json:'
+          Get-Content -LiteralPath update.json
+
       # Генерируем стандартные GitHub release notes.
       # В начало добавляем сообщение самого тега/коммита.
       - name: Generate release notes
@@ -156,11 +206,17 @@ jobs:
       #   Например:
       #       Archivist 0.5.9748.10853
       #
-      # ASSET:
-      #   Загружаем ZIP, созданный на предыдущем шаге с той же версией.
+      # ASSETS:
+      #   ZIP содержит опубликованные бинарники.
+      #   update.json содержит метаданные для Updater.
       #
-      # Таким образом, tag, Release title и бинарники не могут разойтись
-      # из-за повторного вычисления Build/Revision.
+      # В результате Release содержит:
+      #   Archivist 0.5.9748.10853
+      #   Archivist_0.5.9748.10853.zip
+      #   update.json
+      #
+      # Таким образом, tag, Release title, ZIP и update.json используют
+      # одну и ту же реальную версию опубликованного DLL.
       - name: Create GitHub release
         shell: pwsh
         env:
@@ -171,7 +227,7 @@ jobs:
           $archiveName = "Archivist_${env:FULL_VERSION}.zip"
           $releaseTitle = "Archivist $($env:FULL_VERSION)"
 
-          gh release create $tag $archiveName `
+          gh release create $tag $archiveName update.json `
             --title $releaseTitle `
             --notes-file release-notes.md `
             --verify-tag
