@@ -1,5 +1,13 @@
 ﻿# GPT UTILITIES
 
+<details><summary>Legacy</summary>
+
+The original implementation is preserved in the
+[`archive/legacy-gpt_utilities`](...) branch for historical reference.
+
+The active development continues in `master` / `develop`.
+
+</details> 
 
 ## Сборник утилит для работы с экспортом из ChatGPT 
 
