@@ -12,7 +12,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<!--================= Рабочая сборка ==========================-->
-		<Version>0.5</Version>
+		<Version>0.6</Version>
 		<!--===========================================-->
 	</PropertyGroup>
 	<ItemGroup>
