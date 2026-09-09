@@ -26,8 +26,8 @@ permissions:
 env:
   # Пути к файлам с минимальной версией для соответствующего типа релиза.
   # Если файл отсутствует или пуст, minimumVersion будет записан как null.
-  RELEASE_MINIMUM_VERSION_FILE: '.github/release/Archivist_version.txt'
-  MANDATORY_MINIMUM_VERSION_FILE: '.github/release/Archivist_mandatory-version.txt'
+  RELEASE_MINIMUM_VERSION_FILE: '.github/version-release/release_version.txt'
+  MANDATORY_MINIMUM_VERSION_FILE: '.github/version-release/mandatory-version.txt'
 
 jobs:
   release:
