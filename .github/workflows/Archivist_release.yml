@@ -215,12 +215,31 @@ jobs:
           PRODUCT: ${{ steps.config.outputs.product }}
         run: |
           $archiveName = "${env:PRODUCT}_${env:FULL_VERSION}.zip"
+          $publishDirectory = Join-Path $env:GITHUB_WORKSPACE "publish/$env:PRODUCT"
+          $stagingDirectory = Join-Path $env:RUNNER_TEMP "Initial_$($env:PRODUCT)_$($env:FULL_VERSION)"
+
+          # Compress-Archive сохраняет вложенные каталоги только если в него
+          # передаётся структура каталогов. Поэтому сначала создаём staging-каталог
+          # и копируем в него файлы с сохранением относительных путей.
+          New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
 
           # PDB-файлы содержат отладочные символы и не требуются для запуска приложения.
-          $files = Get-ChildItem -Path "publish/$env:PRODUCT" -File |
+          # Остальные файлы копируются рекурсивно вместе с каталогами локализации и ресурсов.
+          $files = Get-ChildItem -Path $publishDirectory -File -Recurse |
               Where-Object { $_.Extension -ne '.pdb' }
 
-          Compress-Archive -Path $files.FullName -DestinationPath $archiveName
+          foreach ($file in $files) {
+              $relativePath = $file.FullName.Substring($publishDirectory.Length).TrimStart('\', '/')
+              $destinationPath = Join-Path $stagingDirectory $relativePath
+              $destinationDirectory = Split-Path -Parent $destinationPath
+
+              # Создаём каталог назначения перед копированием, чтобы вложенная
+              # структура публикации полностью сохранялась в архиве.
+              New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
+              Copy-Item -LiteralPath $file.FullName -Destination $destinationPath -Force
+          }
+
+          Compress-Archive -Path (Join-Path $stagingDirectory '*') -DestinationPath $archiveName
           Write-Host "Created archive: $archiveName"
 
           # Контрольная сумма вычисляется именно для созданного ZIP.
@@ -412,11 +431,20 @@ jobs:
           # Сначала собираем содержимое финального архива в отдельном каталоге.
           New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
 
-          # Копируем опубликованные файлы без PDB. Структура публикации сохраняется плоской.
-          $files = Get-ChildItem -Path $publishDirectory -File |
+          # Копируем опубликованные файлы рекурсивно без PDB.
+          # Относительный путь каждого файла сохраняется, поэтому каталоги
+          # локализации и ресурсов попадают в ZIP в исходном виде.
+          $files = Get-ChildItem -Path $publishDirectory -File -Recurse |
               Where-Object { $_.Extension -ne '.pdb' }
           foreach ($file in $files) {
-              Copy-Item -LiteralPath $file.FullName -Destination $stagingDirectory -Force
+              $relativePath = $file.FullName.Substring($publishDirectory.Length).TrimStart('\', '/')
+              $destinationPath = Join-Path $stagingDirectory $relativePath
+              $destinationDirectory = Split-Path -Parent $destinationPath
+
+              # Создаём каталог назначения перед копированием, чтобы сохранить
+              # исходную структуру publish, включая вложенные каталоги.
+              New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
+              Copy-Item -LiteralPath $file.FullName -Destination $destinationPath -Force
           }
 
           # Источником Markdown является body уже созданного GitHub Release.
