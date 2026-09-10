@@ -154,7 +154,7 @@ jobs:
           # Одно значение времени используется для обоих компонентов версии.
           # Это гарантирует, что Build и Revision относятся к одному моменту.
           $utcNow = [System.DateTime]::UtcNow
-          $build = ($utcNow - [System.DateTime]::Parse('2000-01-01')).Days
+          $build = 10
           $revision = [Math]::Round($utcNow.TimeOfDay.TotalSeconds / 2, 0)
           $fullVersion = "$baseVersion.$build.$revision"
 
