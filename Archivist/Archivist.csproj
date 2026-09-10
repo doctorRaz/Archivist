@@ -11,9 +11,6 @@
 		<ApplicationIcon>Refresh.ico</ApplicationIcon>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-		<!--================= Рабочая сборка ==========================-->
-		<Version>0.6</Version>
-		<!--===========================================-->
 	</PropertyGroup>
 	<ItemGroup>
 		<Content Include="Refresh.ico" />
