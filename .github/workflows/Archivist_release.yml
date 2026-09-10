@@ -2,6 +2,17 @@ name: Archivist Release
 
 # Workflow запускается при push тега Archivist_*.*-release* или Archivist_*.*-mandatory*.
 # Тип релиза определяется непосредственно по имени тега.
+#
+# Например:
+#   git tag Archivist_0.5-release1
+#   git tag Archivist_0.5-mandatory1
+#   git push origin Archivist_0.5-release1
+#
+# Тег и версия бинарников — разные сущности.
+# Тег используется как идентификатор GitHub Release.
+# Реальная версия сборки определяется ПОСЛЕ publish непосредственно из
+# опубликованного Archivist.dll. Поэтому версия в Release, ZIP и update.json
+# всегда соответствует именно тому бинарнику, который попадает к пользователю.
 on:
   push:
     tags:
@@ -14,6 +25,7 @@ permissions:
 
 env:
   # Пути к файлам с минимальной версией для соответствующего типа релиза.
+  # Если файл отсутствует или пуст, minimumVersion будет записан как null.
   RELEASE_MINIMUM_VERSION_FILE: '.github/version-release/release_version.txt'
   MANDATORY_MINIMUM_VERSION_FILE: '.github/version-release/mandatory-version.txt'
 
@@ -42,11 +54,25 @@ jobs:
       - name: Test
         run: dotnet test Archivist.sln --configuration Release --no-restore --verbosity normal
 
-      # Публикуем Archivist. Версия вычисляется существующей MSBuild-конфигурацией.
+      # Публикуем Archivist.
+      #
+      # ВАЖНО: именно этот вызов MSBuild создаёт конечные бинарники.
+      # Build и Revision вычисляются внутри существующей общей конфигурации
+      # Directory.Build.props / Directory.Build.targets.
+      # Поэтому НЕ нужно заранее вычислять версию отдельным вызовом MSBuild:
+      # между двумя вызовами значение Revision может измениться.
       - name: Publish Archivist
         run: dotnet publish Archivist/Archivist.csproj --configuration Release --no-restore --output publish/Archivist --self-contained false
 
       # Читаем реальную FileVersion уже созданного Archivist.dll.
+      #
+      # publish
+      #   ↓
+      # Archivist.dll получает версию
+      #   ↓
+      # читаем версию ИЗ DLL
+      #   ↓
+      # эта версия используется дальше везде
       - name: Read version from published binary
         id: version
         shell: pwsh
@@ -57,7 +83,7 @@ jobs:
             throw "Published binary was not found: $dllPath"
           }
 
-          # Источником версии является именно опубликованный DLL.
+          # Читаем FileVersion непосредственно из опубликованного DLL.
           $fileVersionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($dllPath)
           $fullVersion = $fileVersionInfo.FileVersion
 
@@ -65,10 +91,14 @@ jobs:
             throw "FileVersion is empty in: $dllPath"
           }
 
+          Write-Host "Published binary: $dllPath"
           Write-Host "Real FileVersion: $fullVersion"
+
+          # Передаём ЕДИНСТВЕННЫЙ источник версии следующим steps.
           "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      # Создаём ZIP с версией, прочитанной непосредственно из бинарника.
+      # Создаём первоначальный ZIP с версией, прочитанной непосредственно из бинарника.
+      # Этот ZIP нужен для первоначального GitHub Release и для расчёта исходной контрольной суммы.
       - name: Create release archive
         id: archive
         shell: pwsh
@@ -84,11 +114,22 @@ jobs:
           Compress-Archive -Path $files.FullName -DestinationPath $archiveName
           Write-Host "Created archive: $archiveName"
 
-          # Контрольная сумма первоначального ZIP используется при создании manifest.
+          # Контрольная сумма вычисляется именно для созданного ZIP.
+          # На этом этапе ZIP ещё не содержит описание GitHub Release, поэтому
+          # его SHA-256 будет пересчитан после формирования финального архива.
           $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
           "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # Определяем тип релиза по имени тега и выбираем файл minimumVersion.
+      #
+      # Обычный релиз:
+      #   Archivist_*.*-release*
+      #
+      # Обязательное обновление:
+      #   Archivist_*.*-mandatory*
+      #
+      # Тип релиза определяется только по имени тега, а не по содержимому
+      # файлов minimumVersion.
       - name: Determine release type
         id: release_type
         shell: pwsh
@@ -115,7 +156,11 @@ jobs:
           "mandatory=$($mandatory.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "minimum_version_file=$minimumVersionFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      # Отсутствующий или пустой файл означает отсутствие ограничения minimumVersion.
+      # Читаем minimumVersion из выбранного файла.
+      # Отсутствие файла или пустой файл означает отсутствие ограничения,
+      # поэтому в update.json будет minimumVersion: null.
+      # Если значение задано, оно должно содержать все четыре компонента версии:
+      # Major.Minor.Build.Revision.
       - name: Read minimum version
         id: minimum_version
         shell: pwsh
@@ -158,6 +203,9 @@ jobs:
           }
 
       # Формируем update.json по зафиксированному контракту.
+      # На этом этапе в manifest записывается SHA-256 первоначального ZIP.
+      # После добавления описания Release SHA-256 и размер ZIP будут заменены
+      # на значения финального архива.
       - name: Create update manifest
         shell: pwsh
         env:
@@ -199,7 +247,10 @@ jobs:
 
           $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path update.json -Encoding utf8NoBOM
 
-      # Генерируем стандартные GitHub release notes и добавляем сообщение тега.
+      # Генерируем стандартные GitHub release notes.
+      # В начало добавляем заголовок с именем тега и сообщение самого тега.
+      # Это описание используется при создании GitHub Release, а затем
+      # фактический body созданного Release попадает в Markdown внутри ZIP.
       - name: Generate release notes
         shell: pwsh
         env:
@@ -219,6 +270,8 @@ jobs:
           $body | Set-Content -Path release-notes.md -Encoding utf8NoBOM
 
       # Создаём GitHub Release с первоначальными ZIP и update.json.
+      # После этого Release становится источником окончательного описания,
+      # которое будет включено в финальный ZIP.
       - name: Create GitHub release
         shell: pwsh
         env:
@@ -234,7 +287,10 @@ jobs:
             --notes-file release-notes.md `
             --verify-tag
 
-      # Получаем фактическое описание Release и добавляем его в финальный ZIP.
+      # Получаем фактическое описание уже созданного GitHub Release.
+      # Именно оно является источником Markdown-файла внутри финального ZIP.
+      # ZIP пересоздаётся через staging-каталог, чтобы Compress-Archive получил
+      # единый набор файлов и не смешивал абсолютные и относительные пути.
       - name: Add release description to archive
         shell: pwsh
         env:
