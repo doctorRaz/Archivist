@@ -120,6 +120,59 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
+      # Вычисляем версию релиза ОДИН РАЗ.
+      #
+      # Version берётся из публикуемого проекта, а Build и Revision вычисляются
+      # из одного значения UTC-времени. Полученные значения передаются всем
+      # последующим операциям сборки, поэтому версия релиза больше не зависит
+      # от момента выполнения отдельного вызова MSBuild.
+      - name: Calculate release version
+        id: version
+        shell: pwsh
+        env:
+          PROJECT_PATH: ${{ steps.config.outputs.project_path }}
+        run: |
+          # Получаем базовую Version проекта. Этот вызов только читает свойство
+          # проекта и не выполняет сборку, поэтому не создаёт новую версию.
+          $baseVersion = (dotnet msbuild "$env:PROJECT_PATH" -getProperty:Version).Trim()
+
+          if ([string]::IsNullOrWhiteSpace($baseVersion)) {
+              throw "Version is empty in project: $env:PROJECT_PATH"
+          }
+
+          try {
+              $parsedBaseVersion = [System.Version]::Parse($baseVersion)
+          }
+          catch {
+              throw "Invalid project Version '$baseVersion'. Expected at least Major.Minor."
+          }
+
+          if ($parsedBaseVersion.Build -ge 0 -or $parsedBaseVersion.Revision -ge 0) {
+              throw "Project Version must contain only Major.Minor before Build and Revision are appended: $baseVersion"
+          }
+
+          # Одно значение времени используется для обоих компонентов версии.
+          # Это гарантирует, что Build и Revision относятся к одному моменту.
+          $utcNow = [System.DateTime]::UtcNow
+          $build = ($utcNow - [System.DateTime]::Parse('2000-01-01')).Days
+          $revision = [Math]::Round($utcNow.TimeOfDay.TotalSeconds / 2, 0)
+          $fullVersion = "$baseVersion.$build.$revision"
+
+          # Проверяем итоговую версию тем же типом, который используется далее
+          # при формировании update.json.
+          [System.Version]::Parse($fullVersion) | Out-Null
+
+          Write-Host "Base version: $baseVersion"
+          Write-Host "UTC time: $utcNow"
+          Write-Host "Build: $build"
+          Write-Host "Revision: $revision"
+          Write-Host "Release version: $fullVersion"
+
+          "base_version=$baseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "build=$build" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "revision=$revision" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       # Восстанавливаем NuGet-зависимости один раз.
       # Последующие test/publish используют --no-restore.
       - name: Restore
@@ -135,77 +188,18 @@ jobs:
 
       # Публикуем проект, указанный в release.config.json.
       #
-      # ВАЖНО: именно этот вызов MSBuild создаёт конечные бинарники.
-      # Build и Revision вычисляются внутри существующей общей конфигурации
-      # Directory.Build.props / Directory.Build.targets.
-      # Поэтому НЕ нужно заранее вычислять версию отдельным вызовом MSBuild:
-      # между двумя вызовами значение Revision может измениться.
+      # ВАЖНО: Build и Revision уже вычислены шагом Calculate release version.
+      # Они передаются в MSBuild явно и поэтому Directory.Build.props не вычисляет
+      # их повторно. Все конечные бинарники этого release получают одну версию.
       - name: Publish project
         env:
           PROJECT_PATH: ${{ steps.config.outputs.project_path }}
           PRODUCT: ${{ steps.config.outputs.product }}
-        run: dotnet publish "$env:PROJECT_PATH" --configuration Release --no-restore --output "publish/$env:PRODUCT" --self-contained false
+          BUILD: ${{ steps.version.outputs.build }}
+          REVISION: ${{ steps.version.outputs.revision }}
+        run: dotnet publish "$env:PROJECT_PATH" --configuration Release --no-restore --output "publish/$env:PRODUCT" --self-contained false -p:Build=$env:BUILD -p:Revision=$env:REVISION
 
-      # Определяем фактическое имя сборки из самого публикуемого проекта.
-      # Имя solution/product и имя DLL не обязаны совпадать: AssemblyName
-      # может быть явно задан в csproj. Поэтому поиск бинарника нельзя строить
-      # только по имени solution.
-      - name: Read assembly name
-        id: assembly
-        shell: pwsh
-        env:
-          PROJECT_PATH: ${{ steps.config.outputs.project_path }}
-          PROJECT_NAME: ${{ steps.config.outputs.project_name }}
-        run: |
-          # MSBuild читает итоговое значение AssemblyName с учётом всех
-          # Directory.Build.* и импортируемых project-файлов.
-          $assemblyName = (dotnet msbuild "$env:PROJECT_PATH" -getProperty:AssemblyName).Trim()
-
-          if ([string]::IsNullOrWhiteSpace($assemblyName)) {
-              # Если AssemblyName явно не задан, стандартным именем сборки
-              # является имя csproj без расширения.
-              $assemblyName = $env:PROJECT_NAME
-          }
-
-          if ([string]::IsNullOrWhiteSpace($assemblyName)) {
-              throw "Could not determine AssemblyName for project: $env:PROJECT_PATH"
-          }
-
-          Write-Host "Project: $env:PROJECT_PATH"
-          Write-Host "AssemblyName: $assemblyName"
-
-          "assembly_name=$assemblyName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      # Читаем реальную FileVersion уже созданного DLL.
-      # DLL ищется по фактическому AssemblyName проекта, а не по имени solution.
-      - name: Read version from published binary
-        id: version
-        shell: pwsh
-        env:
-          PRODUCT: ${{ steps.config.outputs.product }}
-          ASSEMBLY_NAME: ${{ steps.assembly.outputs.assembly_name }}
-        run: |
-          $dllPath = Join-Path $env:GITHUB_WORKSPACE "publish/$env:PRODUCT/$env:ASSEMBLY_NAME.dll"
-
-          if (-not (Test-Path -LiteralPath $dllPath)) {
-            throw "Published binary was not found: $dllPath"
-          }
-
-          # Читаем FileVersion непосредственно из опубликованного DLL.
-          $fileVersionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($dllPath)
-          $fullVersion = $fileVersionInfo.FileVersion
-
-          if ([string]::IsNullOrWhiteSpace($fullVersion)) {
-            throw "FileVersion is empty in: $dllPath"
-          }
-
-          Write-Host "Published binary: $dllPath"
-          Write-Host "Real FileVersion: $fullVersion"
-
-          # Передаём ЕДИНСТВЕННЫЙ источник версии следующим steps.
-          "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      # Создаём первоначальный ZIP с версией, прочитанной непосредственно из бинарника.
+      # Создаём первоначальный ZIP с версией, вычисленной workflow.
       # Этот ZIP нужен для первоначального GitHub Release и для расчёта исходной контрольной суммы.
       - name: Create release archive
         id: archive
