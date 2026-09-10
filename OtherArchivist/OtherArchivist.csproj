@@ -11,6 +11,7 @@
 		<ApplicationIcon>Refresh.ico</ApplicationIcon>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<AssemblyName>ProbeArchivist</AssemblyName>
 		<!--================= Рабочая сборка ==========================-->
 		<Version>0.6</Version>
 		<!--===========================================-->
