@@ -9,7 +9,7 @@
 
 Исторические проекты, которые больше не входят в текущую разработку, сохранены в ветке [`archive/legacy-GPT_Utilities`](https://github.com/doctorRaz/Archivist/tree/archive/legacy-GPT_Utilities).
 
-### MoveDuplicate
+### MoveDuplicate 
 
 [README](https://github.com/doctorRaz/Archivist/blob/archive/legacy-GPT_Utilities/MoveDuplicate/README.md)
 
