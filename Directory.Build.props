@@ -27,9 +27,13 @@
 			Версия аналогична механизму AssemblyVersion=0.1.*
 			Build  = количество дней от 01.01.2000
 			Revision = секунды от начала суток / 2
+
+			При обычной сборке Build и Revision вычисляются от текущего UTC-времени.
+			Release workflow передаёт их явно, чтобы все независимые сборки одного
+			release получили одинаковую версию.
 		-->
-		<Build>$([System.DateTime]::UtcNow.Subtract($([System.DateTime]::Parse('2000-01-01'))).Days)</Build>
-		<Revision>$([MSBuild]::Divide($([System.DateTime]::UtcNow.TimeOfDay.TotalSeconds), 2).ToString("F0"))</Revision>
+		<Build Condition="'$(Build)' == ''">$([System.DateTime]::UtcNow.Subtract($([System.DateTime]::Parse('2000-01-01'))).Days)</Build>
+		<Revision Condition="'$(Revision)' == ''">$([MSBuild]::Divide($([System.DateTime]::UtcNow.TimeOfDay.TotalSeconds), 2).ToString("F0"))</Revision>
 
 		<!-- Не генерировать второй AssemblyFileVersion -->
 		<!--<GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>-->
