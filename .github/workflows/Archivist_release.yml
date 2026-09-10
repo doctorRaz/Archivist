@@ -244,15 +244,26 @@ jobs:
           $tag = $env:GITHUB_REF_NAME
           $archiveName = "Archivist_${env:FULL_VERSION}.zip"
           $markdownName = "Archivist_${env:FULL_VERSION}.md"
+          $stagingDirectory = Join-Path $env:RUNNER_TEMP "ArchivistRelease_$($env:FULL_VERSION)"
+
+          # Сначала собираем содержимое финального архива в отдельном каталоге.
+          # Это надёжнее, чем передавать Compress-Archive смешанный массив абсолютных и относительных путей.
+          New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
+
+          # Копируем опубликованные файлы без PDB. Структура публикации сохраняется плоской.
+          $files = Get-ChildItem -Path 'publish/Archivist' -File |
+              Where-Object { $_.Extension -ne '.pdb' }
+          foreach ($file in $files) {
+              Copy-Item -LiteralPath $file.FullName -Destination $stagingDirectory -Force
+          }
 
           # Источником Markdown является body уже созданного GitHub Release.
           gh release view $tag --json body --jq .body | Set-Content -LiteralPath $markdownName -Encoding utf8NoBOM
+          Copy-Item -LiteralPath $markdownName -Destination $stagingDirectory -Force
 
-          # Пересоздаём ZIP, исключая PDB и добавляя описание Release.
-          $files = Get-ChildItem -Path 'publish/Archivist' -File |
-              Where-Object { $_.Extension -ne '.pdb' }
+          # Пересоздаём ZIP из единого staging-каталога.
           Remove-Item -LiteralPath $archiveName -Force
-          Compress-Archive -Path $files.FullName, $markdownName -DestinationPath $archiveName
+          Compress-Archive -Path (Join-Path $stagingDirectory '*') -DestinationPath $archiveName
 
           # После изменения ZIP его SHA-256 и размер изменились, поэтому обновляем update.json.
           $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
