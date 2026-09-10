@@ -146,16 +146,46 @@ jobs:
           PRODUCT: ${{ steps.config.outputs.product }}
         run: dotnet publish "$env:PROJECT_PATH" --configuration Release --no-restore --output "publish/$env:PRODUCT" --self-contained false
 
+      # Определяем фактическое имя сборки из самого публикуемого проекта.
+      # Имя solution/product и имя DLL не обязаны совпадать: AssemblyName
+      # может быть явно задан в csproj. Поэтому поиск бинарника нельзя строить
+      # только по имени solution.
+      - name: Read assembly name
+        id: assembly
+        shell: pwsh
+        env:
+          PROJECT_PATH: ${{ steps.config.outputs.project_path }}
+          PROJECT_NAME: ${{ steps.config.outputs.project_name }}
+        run: |
+          # MSBuild читает итоговое значение AssemblyName с учётом всех
+          # Directory.Build.* и импортируемых project-файлов.
+          $assemblyName = (dotnet msbuild "$env:PROJECT_PATH" -getProperty:AssemblyName).Trim()
+
+          if ([string]::IsNullOrWhiteSpace($assemblyName)) {
+              # Если AssemblyName явно не задан, стандартным именем сборки
+              # является имя csproj без расширения.
+              $assemblyName = $env:PROJECT_NAME
+          }
+
+          if ([string]::IsNullOrWhiteSpace($assemblyName)) {
+              throw "Could not determine AssemblyName for project: $env:PROJECT_PATH"
+          }
+
+          Write-Host "Project: $env:PROJECT_PATH"
+          Write-Host "AssemblyName: $assemblyName"
+
+          "assembly_name=$assemblyName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       # Читаем реальную FileVersion уже созданного DLL.
-      # Имя DLL соответствует имени solution/product, которое является источником
-      # имени продукта для release workflow.
+      # DLL ищется по фактическому AssemblyName проекта, а не по имени solution.
       - name: Read version from published binary
         id: version
         shell: pwsh
         env:
           PRODUCT: ${{ steps.config.outputs.product }}
+          ASSEMBLY_NAME: ${{ steps.assembly.outputs.assembly_name }}
         run: |
-          $dllPath = Join-Path $env:GITHUB_WORKSPACE "publish/$env:PRODUCT/$env:PRODUCT.dll"
+          $dllPath = Join-Path $env:GITHUB_WORKSPACE "publish/$env:PRODUCT/$env:ASSEMBLY_NAME.dll"
 
           if (-not (Test-Path -LiteralPath $dllPath)) {
             throw "Published binary was not found: $dllPath"
