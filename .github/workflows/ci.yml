@@ -1,5 +1,7 @@
 name: CI
 
+# CI использует ту же конфигурацию solution, что и release workflow.
+# Благодаря этому переименование solution не требует изменения самого workflow.
 on:
   push:
     branches:
@@ -9,7 +11,7 @@ on:
       - master
       
 permissions:
-    contents: read
+  contents: read
   
 jobs:
   test:
@@ -20,6 +22,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read build configuration
+        id: config
+        shell: pwsh
+        run: |
+          # Все пути, зависящие от конкретного проекта, берём из общей release-конфигурации.
+          $configPath = Join-Path $env:GITHUB_WORKSPACE '.github/release.config.json'
+
+          if (-not (Test-Path -LiteralPath $configPath)) {
+              throw "Release configuration was not found: $configPath"
+          }
+
+          $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+
+          if ([string]::IsNullOrWhiteSpace($config.solution)) {
+              throw "Release configuration property 'solution' is empty."
+          }
+
+          $solutionPath = $config.solution
+          $solutionFullPath = Join-Path $env:GITHUB_WORKSPACE $solutionPath
+
+          if (-not (Test-Path -LiteralPath $solutionFullPath)) {
+              throw "Solution was not found: $solutionPath"
+          }
+
+          Write-Host "Solution: $solutionPath"
+          "solution_path=$solutionPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -27,11 +56,20 @@ jobs:
             6.0.x
             8.0.x
 
+      # Восстанавливаем зависимости именно для solution из конфигурации.
       - name: Restore
-        run: dotnet restore Archivist.sln
+        env:
+          SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
+        run: dotnet restore "$env:SOLUTION_PATH"
 
+      # Собираем ту же solution, которую восстановили на предыдущем шаге.
       - name: Build
-        run: dotnet build Archivist.sln --configuration Release --no-restore
+        env:
+          SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
+        run: dotnet build "$env:SOLUTION_PATH" --configuration Release --no-restore
 
+      # Запускаем тесты для той же solution без повторной сборки.
       - name: Test
-        run: dotnet test Archivist.sln --configuration Release --no-build --verbosity normal
+        env:
+          SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
+        run: dotnet test "$env:SOLUTION_PATH" --configuration Release --no-build --verbosity normal
