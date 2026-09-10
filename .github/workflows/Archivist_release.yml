@@ -2,17 +2,6 @@ name: Archivist Release
 
 # Workflow запускается при push тега Archivist_*.*-release* или Archivist_*.*-mandatory*.
 # Тип релиза определяется непосредственно по имени тега.
-#
-# Например:
-#   git tag Archivist_0.5-release1
-#   git tag Archivist_0.5-mandatory1
-#   git push origin Archivist_0.5-release1
-#
-# Тег и версия бинарников — разные сущности.
-# Тег используется только как идентификатор GitHub Release.
-# Реальная версия сборки определяется ПОСЛЕ publish непосредственно из
-# опубликованного Archivist.dll. Поэтому версия в Release, ZIP и update.json
-# всегда соответствует именно тому бинарнику, который попадает к пользователю.
 on:
   push:
     tags:
@@ -25,7 +14,6 @@ permissions:
 
 env:
   # Пути к файлам с минимальной версией для соответствующего типа релиза.
-  # Если файл отсутствует или пуст, minimumVersion будет записан как null.
   RELEASE_MINIMUM_VERSION_FILE: '.github/version-release/release_version.txt'
   MANDATORY_MINIMUM_VERSION_FILE: '.github/version-release/mandatory-version.txt'
 
@@ -54,25 +42,11 @@ jobs:
       - name: Test
         run: dotnet test Archivist.sln --configuration Release --no-restore --verbosity normal
 
-      # Публикуем Archivist.
-      #
-      # ВАЖНО: именно этот вызов MSBuild создаёт конечные бинарники.
-      # Build и Revision вычисляются внутри существующей общей конфигурации
-      # Directory.Build.props / Directory.Build.targets.
-      # Поэтому НЕ нужно заранее вычислять версию отдельным вызовом MSBuild:
-      # между двумя вызовами значение Revision может измениться.
+      # Публикуем Archivist. Версия вычисляется существующей MSBuild-конфигурацией.
       - name: Publish Archivist
         run: dotnet publish Archivist/Archivist.csproj --configuration Release --no-restore --output publish/Archivist --self-contained false
 
       # Читаем реальную FileVersion уже созданного Archivist.dll.
-      #
-      # publish
-      #   ↓
-      # Archivist.dll получает версию
-      #   ↓
-      # читаем версию ИЗ DLL
-      #   ↓
-      # эта версия используется дальше везде
       - name: Read version from published binary
         id: version
         shell: pwsh
@@ -83,7 +57,7 @@ jobs:
             throw "Published binary was not found: $dllPath"
           }
 
-          # Читаем FileVersion непосредственно из опубликованного DLL.
+          # Источником версии является именно опубликованный DLL.
           $fileVersionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($dllPath)
           $fullVersion = $fileVersionInfo.FileVersion
 
@@ -91,10 +65,7 @@ jobs:
             throw "FileVersion is empty in: $dllPath"
           }
 
-          Write-Host "Published binary: $dllPath"
           Write-Host "Real FileVersion: $fullVersion"
-
-          # Передаём ЕДИНСТВЕННЫЙ источник версии следующим steps.
           "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # Создаём ZIP с версией, прочитанной непосредственно из бинарника.
@@ -106,23 +77,194 @@ jobs:
         run: |
           $archiveName = "Archivist_${env:FULL_VERSION}.zip"
 
-          # Архивируем все опубликованные файлы, кроме PDB-файлов.
-          # PDB содержит отладочные символы и не требуется для запуска Archivist,
-          # поэтому сначала получаем список файлов без PDB, а затем передаём его Compress-Archive.
+          # PDB-файлы содержат отладочные символы и не требуются для запуска Archivist.
           $files = Get-ChildItem -Path 'publish/Archivist' -File |
               Where-Object { $_.Extension -ne '.pdb' }
 
           Compress-Archive -Path $files.FullName -DestinationPath $archiveName
           Write-Host "Created archive: $archiveName"
 
-          # Контрольная сумма вычисляется именно для созданного ZIP.
-          # Она записывается в update.json и позволяет Updater проверить,
-          # что скачанный архив не повреждён и соответствует опубликованному файлу.
+          # Контрольная сумма первоначального ZIP используется при создании manifest.
           $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
-          Write-Host "SHA-256: $sha256"
           "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # Определяем тип релиза по имени тега и выбираем файл minimumVersion.
-      #
-      # Обычный релиз: minimumVersion берётся из release_version.txt.
-      # Обязательный релиз: minimumVersion берётся из mandatory-version.txt.
+      - name: Determine release type
+        id: release_type
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+
+          if ($tag -like 'Archivist_*.*-release*') {
+              # Обычный релиз не является обязательным обновлением.
+              $mandatory = $false
+              $minimumVersionFile = $env:RELEASE_MINIMUM_VERSION_FILE
+          }
+          elseif ($tag -like 'Archivist_*.*-mandatory*') {
+              # Mandatory-релиз требует обязательного обновления.
+              $mandatory = $true
+              $minimumVersionFile = $env:MANDATORY_MINIMUM_VERSION_FILE
+          }
+          else {
+              throw "Unsupported Archivist tag format: $tag"
+          }
+
+          Write-Host "Tag: $tag"
+          Write-Host "Mandatory: $mandatory"
+          Write-Host "Minimum version file: $minimumVersionFile"
+          "mandatory=$($mandatory.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "minimum_version_file=$minimumVersionFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Отсутствующий или пустой файл означает отсутствие ограничения minimumVersion.
+      - name: Read minimum version
+        id: minimum_version
+        shell: pwsh
+        env:
+          MINIMUM_VERSION_FILE: ${{ steps.release_type.outputs.minimum_version_file }}
+        run: |
+          $minimumVersion = $null
+          $file = Join-Path $env:GITHUB_WORKSPACE $env:MINIMUM_VERSION_FILE
+
+          if (Test-Path -LiteralPath $file) {
+              $text = (Get-Content -LiteralPath $file -Raw).Trim()
+
+              if (-not [string]::IsNullOrWhiteSpace($text)) {
+                  try {
+                      $parsedVersion = [System.Version]::Parse($text)
+                  }
+                  catch {
+                      throw "Invalid minimum version '$text' in file: $file. Expected Major.Minor.Build.Revision."
+                  }
+
+                  if ($parsedVersion.Revision -lt 0) {
+                      throw "Minimum version must contain four components: $text"
+                  }
+
+                  $minimumVersion = [ordered]@{
+                      major = $parsedVersion.Major
+                      minor = $parsedVersion.Minor
+                      build = $parsedVersion.Build
+                      revision = $parsedVersion.Revision
+                  }
+              }
+          }
+
+          if ($null -eq $minimumVersion) {
+              'minimum_version_json=null' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+          else {
+              $json = $minimumVersion | ConvertTo-Json -Compress
+              "minimum_version_json=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      # Формируем update.json по зафиксированному контракту.
+      - name: Create update manifest
+        shell: pwsh
+        env:
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          SHA256: ${{ steps.archive.outputs.sha256 }}
+          MANDATORY: ${{ steps.release_type.outputs.mandatory }}
+          MINIMUM_VERSION_JSON: ${{ steps.minimum_version.outputs.minimum_version_json }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          $version = [System.Version]::Parse($env:FULL_VERSION)
+
+          if ($version.Revision -lt 0) {
+              throw "Revision is not available in version: $env:FULL_VERSION"
+          }
+
+          $minimumVersion = if ($env:MINIMUM_VERSION_JSON -eq 'null') {
+              $null
+          } else {
+              $env:MINIMUM_VERSION_JSON | ConvertFrom-Json
+          }
+
+          $manifest = [ordered]@{
+              product = 'Archivist'
+              version = [ordered]@{
+                  major = $version.Major
+                  minor = $version.Minor
+                  build = $version.Build
+                  revision = $version.Revision
+              }
+              tag = $env:GITHUB_REF_NAME
+              asset = "Archivist_$($env:FULL_VERSION).zip"
+              sha256 = $env:SHA256
+              size = $null
+              commit = $env:COMMIT
+              mandatory = [System.Convert]::ToBoolean($env:MANDATORY)
+              minimumVersion = $minimumVersion
+              publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          }
+
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path update.json -Encoding utf8NoBOM
+
+      # Генерируем стандартные GitHub release notes и добавляем сообщение тега.
+      - name: Generate release notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tagRef = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:GITHUB_REF_NAME" | ConvertFrom-Json
+          if ($tagRef.object.type -eq 'tag') {
+              $tagMessage = (gh api "repos/$env:GITHUB_REPOSITORY/git/tags/$($tagRef.object.sha)" | ConvertFrom-Json).message.Trim()
+          } else {
+              $tagMessage = (gh api "repos/$env:GITHUB_REPOSITORY/commits/$($tagRef.object.sha)" | ConvertFrom-Json).commit.message.Trim()
+          }
+
+          $generated = gh api --method POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$env:GITHUB_REF_NAME" | ConvertFrom-Json
+          $body = "# $env:GITHUB_REF_NAME"
+          if ($tagMessage) { $body += "`r`n`r`n$tagMessage" }
+          if ($generated.body) { $body += "`r`n`r`n$($generated.body)" }
+          $body | Set-Content -Path release-notes.md -Encoding utf8NoBOM
+
+      # Создаём GitHub Release с первоначальными ZIP и update.json.
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $archiveName = "Archivist_${env:FULL_VERSION}.zip"
+          $releaseTitle = "Archivist $($env:FULL_VERSION)"
+
+          gh release create $tag $archiveName update.json `
+            --title $releaseTitle `
+            --notes-file release-notes.md `
+            --verify-tag
+
+      # Получаем фактическое описание Release и добавляем его в финальный ZIP.
+      - name: Add release description to archive
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $archiveName = "Archivist_${env:FULL_VERSION}.zip"
+          $markdownName = "Archivist_${env:FULL_VERSION}.md"
+
+          # Источником Markdown является body уже созданного GitHub Release.
+          gh release view $tag --json body --jq .body | Set-Content -LiteralPath $markdownName -Encoding utf8NoBOM
+
+          # Пересоздаём ZIP, исключая PDB и добавляя описание Release.
+          $files = Get-ChildItem -Path 'publish/Archivist' -File |
+              Where-Object { $_.Extension -ne '.pdb' }
+          Remove-Item -LiteralPath $archiveName -Force
+          Compress-Archive -Path $files.FullName, $markdownName -DestinationPath $archiveName
+
+          # После изменения ZIP его SHA-256 и размер изменились, поэтому обновляем update.json.
+          $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $archiveName).Length
+          $manifest = Get-Content -LiteralPath update.json -Raw | ConvertFrom-Json
+          $manifest.sha256 = $sha256
+          $manifest.size = $size
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath update.json -Encoding utf8NoBOM
+
+          # Заменяем первоначальные assets их финальными версиями.
+          gh release upload $tag $archiveName update.json --clobber
+
+          Write-Host "Added release description: $markdownName"
+          Write-Host "Final SHA-256: $sha256"
+          Write-Host "Final size: $size bytes"
