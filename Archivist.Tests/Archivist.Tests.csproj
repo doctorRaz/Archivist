@@ -21,7 +21,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Archivist\OtherArchivist.csproj" />
 		<ProjectReference Include="..\OtherArchivist\OtherArchivist.csproj" />
 		<None Update="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
