@@ -1,4 +1,7 @@
 {
   "solution": "Archivist.sln",
-  "project": "Archivist/Archivist.csproj"
+  "projects": [
+    "Archivist/Archivist.csproj",
+    "Archivist.Tools/Archivist.Tools.csproj"
+  ]
 }
