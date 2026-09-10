@@ -28,7 +28,7 @@ Archivist импортирует разговоры из ZIP-архивов эк
 
 ## Установка
 
-Скачай последний релиз Archivist из раздела **Releases** на GitHub.
+Скачай последний релиз **[Archivist](https://github.com/doctorRaz/Archivist/releases/latest)**.
 
 Archivist не требует установки: распакуй архив и запусти `GPT_Archivist.exe`.
 
