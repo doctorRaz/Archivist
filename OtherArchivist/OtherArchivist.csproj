@@ -20,6 +20,8 @@
 		<Content Include="Refresh.ico" />
 	</ItemGroup>
 	<ItemGroup>
+		<PackageReference Include="NLog" Version="6.2.0" />
+		<PackageReference Include="PDFsharp" Version="6.2.4" />
 		<PackageReference Include="YamlDotNet" Version="18.1.0" />
 	</ItemGroup>
 	<ItemGroup>

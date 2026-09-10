@@ -3,9 +3,11 @@ using dRz.GPT_Utilities.Archivist.Export;
 using dRz.GPT_Utilities.Archivist.Files;
 using dRz.GPT_Utilities.Archivist.Infrastructure;
 using System.Text;
+using NLog;
 
 namespace dRz.GPT_Utilities.Archivist
 {
+
     /*
      * Parser отвечает за то, что пользователь ввёл.
      * Main / application layer отвечает за то, можно ли с этими параметрами реально работать.
@@ -21,6 +23,7 @@ namespace dRz.GPT_Utilities.Archivist
         /// <returns>Код завершения приложения.</returns>
         private static int Main(string[] args)
         {
+            var log = LogManager.GetCurrentClassLogger();
             ConfigureApplication();
 
 #if DEBUG
