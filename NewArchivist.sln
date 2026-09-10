@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.8.12023.21
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Archivist", "Archivist\Archivist.csproj", "{D43BD3BE-B264-7524-401E-7180AA8CE1E8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OtherArchivist", "OtherArchivist\OtherArchivist.csproj", "{D43BD3BE-B264-7524-401E-7180AA8CE1E8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Archivist.Tests", "Archivist.Tests\Archivist.Tests.csproj", "{1FA23498-7D77-4554-AF5B-0791F782259D}"
 EndProject
