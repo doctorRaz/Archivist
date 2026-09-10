@@ -2,13 +2,10 @@ name: Release
 
 # Универсальный release workflow.
 #
-# Конкретный solution и проект задаются только в .github/release.config.json.
-# Workflow не зависит от имени конкретного продукта: имя продукта вычисляется
-# из имени solution и далее используется для тегов, Release, ZIP и update.json.
-#
-# GitHub Actions не умеет использовать содержимое репозитория в фильтре on.push.tags,
-# поэтому здесь используется общий фильтр по суффиксам release/mandatory.
-# После checkout имя продукта и допустимый формат тега проверяются по конфигурации.
+# Конкретный solution и список публикуемых проектов задаются только в
+# .github/release.config.json. Workflow не зависит от имени конкретного продукта:
+# имя продукта вычисляется из имени solution и используется для тегов, Release,
+# ZIP и update.json.
 on:
   push:
     tags:
@@ -20,7 +17,7 @@ permissions:
   contents: write
 
 env:
-  # Файл конфигурации содержит только параметры, зависящие от конкретного проекта.
+  # Файл конфигурации содержит параметры, зависящие от конкретного проекта.
   RELEASE_CONFIG_FILE: '.github/release.config.json'
 
   # Пути к файлам с минимальной версией для соответствующего типа релиза.
@@ -41,8 +38,8 @@ jobs:
       # Читаем конфигурацию конкретного проекта.
       #
       # solution — путь к solution относительно корня репозитория.
-      # project  — путь к публикуемому csproj относительно корня репозитория.
-      # Имя файла solution используется как имя продукта.
+      # projects — список независимых csproj, которые должны попасть в release.
+      # Тестовые проекты отдельно не перечисляются: dotnet test запускается для solution.
       - name: Read release configuration
         id: config
         shell: pwsh
@@ -59,42 +56,44 @@ jobs:
               throw "Release configuration property 'solution' is empty."
           }
 
-          if ([string]::IsNullOrWhiteSpace($config.project)) {
-              throw "Release configuration property 'project' is empty."
+          if ($null -eq $config.projects -or @($config.projects).Count -eq 0) {
+              throw "Release configuration property 'projects' must contain at least one project."
           }
 
           $solutionPath = $config.solution
-          $projectPath = $config.project
+          $projectPaths = @($config.projects)
           $solutionName = [System.IO.Path]::GetFileNameWithoutExtension($solutionPath)
-          $projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
 
           if ([string]::IsNullOrWhiteSpace($solutionName)) {
               throw "Could not determine product name from solution: $solutionPath"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($projectName)) {
-              throw "Could not determine project name from project path: $projectPath"
           }
 
           if (-not (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $solutionPath))) {
               throw "Solution was not found: $solutionPath"
           }
 
-          if (-not (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $projectPath))) {
-              throw "Project was not found: $projectPath"
+          Write-Host "Solution: $solutionPath"
+          Write-Host "Projects:"
+
+          foreach ($projectPath in $projectPaths) {
+              if ([string]::IsNullOrWhiteSpace($projectPath)) {
+                  throw "Release configuration contains an empty project path."
+              }
+
+              if (-not (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $projectPath))) {
+                  throw "Project was not found: $projectPath"
+              }
+
+              Write-Host "  $projectPath"
           }
 
-          # Product is derived from the solution filename, so the same workflow
-          # can be copied to another repository without changing its executable logic.
-          Write-Host "Solution: $solutionPath"
-          Write-Host "Project: $projectPath"
-          Write-Host "Product: $solutionName"
-          Write-Host "Project name: $projectName"
+          # JSON is used for the project list so it can be passed unchanged between
+          # workflow steps through GITHUB_OUTPUT.
+          $projectsJson = $projectPaths | ConvertTo-Json -Compress
 
           "solution_path=$solutionPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "project_path=$projectPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "projects_json=$projectsJson" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "product=$solutionName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "project_name=$projectName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # Проверяем, что тег действительно относится к продукту из конфигурации.
       # Это предотвращает случайный запуск release workflow для чужого тега.
@@ -113,128 +112,154 @@ jobs:
           Write-Host "Release tag: $tag"
 
       # Archivist и другие проекты этой схемы собираются под .NET 6.
-      # Если репозиторий использует другой SDK, эта единственная настройка
-      # может быть вынесена в release.config.json в отдельном изменении.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 6.0.x
 
-      # Восстанавливаем NuGet-зависимости один раз.
-      # Последующие test/publish используют --no-restore.
+      # Вычисляем версию релиза ОДИН РАЗ.
+      # Major и Minor берутся из первого публикуемого проекта и используются
+      # только для формирования общей версии релиза: имени ZIP, update.json
+      # и других release-метаданных.
+      #
+      # При публикации каждый проект сохраняет собственные Major и Minor,
+      # определённые его Version/Directory.Build.props. Общими для всех
+      # проектов являются только Build и Revision, переданные workflow.
+      - name: Calculate release version
+        id: version
+        shell: pwsh
+        env:
+          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
+        run: |
+          $projectPaths = $env:PROJECTS_JSON | ConvertFrom-Json
+          $versionProject = @($projectPaths)[0]
+
+          # Получаем базовую Major.Minor первого release-проекта для формирования
+          # общей версии релиза. Это не задаёт Major.Minor другим проектам.
+          $baseVersion = (dotnet msbuild "$versionProject" -getProperty:Version).Trim()
+
+          if ([string]::IsNullOrWhiteSpace($baseVersion)) {
+              throw "Version is empty in project: $versionProject"
+          }
+
+          try {
+              $parsedBaseVersion = [System.Version]::Parse($baseVersion)
+          }
+          catch {
+              throw "Invalid project Version '$baseVersion'. Expected at least Major.Minor."
+          }
+
+          if ($parsedBaseVersion.Build -ge 0 -or $parsedBaseVersion.Revision -ge 0) {
+              throw "Project Version must contain only Major.Minor before Build and Revision are appended: $baseVersion"
+          }
+
+          # Одно значение времени используется для обоих компонентов версии.
+          $utcNow = [System.DateTime]::UtcNow
+          $build = ($utcNow - [System.DateTime]::Parse('2000-01-01')).Days
+          $revision = [Math]::Round($utcNow.TimeOfDay.TotalSeconds / 2, 0)
+          $fullVersion = "$baseVersion.$build.$revision"
+
+          [System.Version]::Parse($fullVersion) | Out-Null
+
+          Write-Host "Version project: $versionProject"
+          Write-Host "Base version: $baseVersion"
+          Write-Host "UTC time: $utcNow"
+          Write-Host "Build: $build"
+          Write-Host "Revision: $revision"
+          Write-Host "Release version: $fullVersion"
+
+          "base_version=$baseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "build=$build" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "revision=$revision" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # Восстанавливаем NuGet-зависимости один раз для всего solution.
       - name: Restore
         env:
           SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
         run: dotnet restore "$env:SOLUTION_PATH"
 
       # Тестируем solution до публикации.
+      # Все тестовые проекты, входящие в solution, будут обработаны автоматически.
       - name: Test
         env:
           SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
         run: dotnet test "$env:SOLUTION_PATH" --configuration Release --no-restore --verbosity normal
 
-      # Публикуем проект, указанный в release.config.json.
-      #
-      # ВАЖНО: именно этот вызов MSBuild создаёт конечные бинарники.
-      # Build и Revision вычисляются внутри существующей общей конфигурации
-      # Directory.Build.props / Directory.Build.targets.
-      # Поэтому НЕ нужно заранее вычислять версию отдельным вызовом MSBuild:
-      # между двумя вызовами значение Revision может измениться.
-      - name: Publish project
-        env:
-          PROJECT_PATH: ${{ steps.config.outputs.project_path }}
-          PRODUCT: ${{ steps.config.outputs.product }}
-        run: dotnet publish "$env:PROJECT_PATH" --configuration Release --no-restore --output "publish/$env:PRODUCT" --self-contained false
-
-      # Определяем фактическое имя сборки из самого публикуемого проекта.
-      # Имя solution/product и имя DLL не обязаны совпадать: AssemblyName
-      # может быть явно задан в csproj. Поэтому поиск бинарника нельзя строить
-      # только по имени solution.
-      - name: Read assembly name
-        id: assembly
+      # Публикуем каждый независимый release-проект в отдельный временный каталог.
+      # Это предотвращает взаимное влияние publish-операций до этапа объединения.
+      - name: Publish projects
         shell: pwsh
         env:
-          PROJECT_PATH: ${{ steps.config.outputs.project_path }}
-          PROJECT_NAME: ${{ steps.config.outputs.project_name }}
+          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
+          BUILD: ${{ steps.version.outputs.build }}
+          REVISION: ${{ steps.version.outputs.revision }}
         run: |
-          # MSBuild читает итоговое значение AssemblyName с учётом всех
-          # Directory.Build.* и импортируемых project-файлов.
-          $assemblyName = (dotnet msbuild "$env:PROJECT_PATH" -getProperty:AssemblyName).Trim()
+          $projectPaths = $env:PROJECTS_JSON | ConvertFrom-Json
+          $publishRoot = Join-Path $env:GITHUB_WORKSPACE 'publish'
 
-          if ([string]::IsNullOrWhiteSpace($assemblyName)) {
-              # Если AssemblyName явно не задан, стандартным именем сборки
-              # является имя csproj без расширения.
-              $assemblyName = $env:PROJECT_NAME
+          Remove-Item -LiteralPath $publishRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $publishRoot -Force | Out-Null
+
+          foreach ($projectPath in $projectPaths) {
+              $projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
+              $projectDirectory = Join-Path $publishRoot $projectName
+
+              Write-Host "Publishing: $projectPath"
+              Write-Host "Output: $projectDirectory"
+
+              dotnet publish "$projectPath" `
+                  --configuration Release `
+                  --no-restore `
+                  --output "$projectDirectory" `
+                  --self-contained false `
+                  -p:Build=$env:BUILD `
+                  -p:Revision=$env:REVISION
           }
 
-          if ([string]::IsNullOrWhiteSpace($assemblyName)) {
-              throw "Could not determine AssemblyName for project: $env:PROJECT_PATH"
-          }
-
-          Write-Host "Project: $env:PROJECT_PATH"
-          Write-Host "AssemblyName: $assemblyName"
-
-          "assembly_name=$assemblyName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      # Читаем реальную FileVersion уже созданного DLL.
-      # DLL ищется по фактическому AssemblyName проекта, а не по имени solution.
-      - name: Read version from published binary
-        id: version
-        shell: pwsh
-        env:
-          PRODUCT: ${{ steps.config.outputs.product }}
-          ASSEMBLY_NAME: ${{ steps.assembly.outputs.assembly_name }}
-        run: |
-          $dllPath = Join-Path $env:GITHUB_WORKSPACE "publish/$env:PRODUCT/$env:ASSEMBLY_NAME.dll"
-
-          if (-not (Test-Path -LiteralPath $dllPath)) {
-            throw "Published binary was not found: $dllPath"
-          }
-
-          # Читаем FileVersion непосредственно из опубликованного DLL.
-          $fileVersionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($dllPath)
-          $fullVersion = $fileVersionInfo.FileVersion
-
-          if ([string]::IsNullOrWhiteSpace($fullVersion)) {
-            throw "FileVersion is empty in: $dllPath"
-          }
-
-          Write-Host "Published binary: $dllPath"
-          Write-Host "Real FileVersion: $fullVersion"
-
-          # Передаём ЕДИНСТВЕННЫЙ источник версии следующим steps.
-          "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      # Создаём первоначальный ZIP с версией, прочитанной непосредственно из бинарника.
-      # Этот ZIP нужен для первоначального GitHub Release и для расчёта исходной контрольной суммы.
+      # Объединяем все publish-результаты в один плоский каталог.
+      # Независимые проекты используют одинаковые reference-библиотеки, поэтому
+      # одинаковые файлы можно безопасно перезаписывать последующей копией.
       - name: Create release archive
         id: archive
         shell: pwsh
         env:
           FULL_VERSION: ${{ steps.version.outputs.full_version }}
           PRODUCT: ${{ steps.config.outputs.product }}
+          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
         run: |
           $archiveName = "${env:PRODUCT}_${env:FULL_VERSION}.zip"
-          $publishDirectory = Join-Path $env:GITHUB_WORKSPACE "publish/$env:PRODUCT"
+          $publishRoot = Join-Path $env:GITHUB_WORKSPACE 'publish'
           $stagingDirectory = Join-Path $env:RUNNER_TEMP "Initial_$($env:PRODUCT)_$($env:FULL_VERSION)"
 
-          # Compress-Archive сохраняет вложенные каталоги только если в него
-          # передаётся структура каталогов. Поэтому сначала создаём staging-каталог
-          # и копируем в него файлы с сохранением относительных путей.
           New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
 
-          # PDB-файлы содержат отладочные символы и не требуются для запуска приложения.
-          # Остальные файлы копируются рекурсивно вместе с каталогами локализации и ресурсов.
-          $files = Get-ChildItem -Path $publishDirectory -File -Recurse |
+          $files = Get-ChildItem -Path $publishRoot -File -Recurse |
               Where-Object { $_.Extension -ne '.pdb' }
 
           foreach ($file in $files) {
-              $relativePath = $file.FullName.Substring($publishDirectory.Length).TrimStart('\', '/')
+              # Каждый publish-проект временно находится в собственной папке,
+              # но в финальном архиве все файлы должны находиться в одном каталоге.
+              $matchedProject = $null
+
+              foreach ($projectPath in ($env:PROJECTS_JSON | ConvertFrom-Json)) {
+                  $projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
+                  $candidateRoot = Join-Path $publishRoot $projectName
+
+                  if ($file.FullName.StartsWith($candidateRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                      $matchedProject = $candidateRoot
+                      break
+                  }
+              }
+
+              if ($null -eq $matchedProject) {
+                  throw "Could not determine publish project for file: $($file.FullName)"
+              }
+
+              $relativePath = $file.FullName.Substring($matchedProject.Length).TrimStart('\', '/')
               $destinationPath = Join-Path $stagingDirectory $relativePath
               $destinationDirectory = Split-Path -Parent $destinationPath
 
-              # Создаём каталог назначения перед копированием, чтобы вложенная
-              # структура публикации полностью сохранялась в архиве.
               New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
               Copy-Item -LiteralPath $file.FullName -Destination $destinationPath -Force
           }
@@ -242,13 +267,10 @@ jobs:
           Compress-Archive -Path (Join-Path $stagingDirectory '*') -DestinationPath $archiveName
           Write-Host "Created archive: $archiveName"
 
-          # Контрольная сумма вычисляется именно для созданного ZIP.
-          # После добавления описания Release SHA-256 будет пересчитан для финального архива.
           $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
           "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # Определяем тип релиза по имени тега и выбираем файл minimumVersion.
-      # Тип релиза определяется только по имени тега, а не по содержимому файлов minimumVersion.
       - name: Determine release type
         id: release_type
         shell: pwsh
@@ -259,12 +281,10 @@ jobs:
           $product = $env:PRODUCT
 
           if ($tag -like "${product}_*-release*") {
-              # Обычный релиз не является обязательным обновлением.
               $mandatory = $false
               $minimumVersionFile = $env:RELEASE_MINIMUM_VERSION_FILE
           }
           elseif ($tag -like "${product}_*-mandatory*") {
-              # Mandatory-релиз требует обязательного обновления.
               $mandatory = $true
               $minimumVersionFile = $env:MANDATORY_MINIMUM_VERSION_FILE
           }
@@ -279,10 +299,6 @@ jobs:
           "minimum_version_file=$minimumVersionFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # Читаем minimumVersion из выбранного файла.
-      # Отсутствие файла или пустой файл означает отсутствие ограничения,
-      # поэтому в update.json будет minimumVersion: null.
-      # Если значение задано, оно должно содержать все четыре компонента версии:
-      # Major.Minor.Build.Revision.
       - name: Read minimum version
         id: minimum_version
         shell: pwsh
@@ -324,10 +340,7 @@ jobs:
               "minimum_version_json=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
-      # Формируем update.json по зафиксированному контракту.
-      # На этом этапе в manifest записывается SHA-256 первоначального ZIP.
-      # После добавления описания Release SHA-256 и размер ZIP будут заменены
-      # на значения финального архива.
+      # Создаём update.json из версии, вычисленной workflow, а не из DLL.
       - name: Create update manifest
         shell: pwsh
         env:
@@ -370,10 +383,7 @@ jobs:
 
           $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path update.json -Encoding utf8NoBOM
 
-      # Генерируем стандартные GitHub release notes.
-      # В начало добавляем заголовок с именем тега и сообщение самого тега.
-      # Это описание используется при создании GitHub Release, а затем
-      # фактический body созданного Release попадает в Markdown внутри ZIP.
+      # Получаем описание будущего Release и сохраняем его вместе с архивом.
       - name: Generate release notes
         shell: pwsh
         env:
@@ -392,9 +402,7 @@ jobs:
           if ($generated.body) { $body += "`r`n`r`n$($generated.body)" }
           $body | Set-Content -Path release-notes.md -Encoding utf8NoBOM
 
-      # Создаём GitHub Release с первоначальными ZIP и update.json.
-      # После этого Release становится источником окончательного описания,
-      # которое будет включено в финальный ZIP.
+      # Создаём GitHub Release с первоначальным ZIP и update.json.
       - name: Create GitHub release
         shell: pwsh
         env:
@@ -411,52 +419,59 @@ jobs:
             --notes-file release-notes.md `
             --verify-tag
 
-      # Получаем фактическое описание уже созданного GitHub Release.
-      # Именно оно является источником Markdown-файла внутри финального ZIP.
-      # ZIP пересоздаётся через staging-каталог, чтобы Compress-Archive получил
-      # единый набор файлов и не смешивал абсолютные и относительные пути.
+      # Добавляем описание Release в архив и повторно загружаем финальные assets.
       - name: Add release description to archive
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           FULL_VERSION: ${{ steps.version.outputs.full_version }}
           PRODUCT: ${{ steps.config.outputs.product }}
+          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
         run: |
           $tag = $env:GITHUB_REF_NAME
           $archiveName = "${env:PRODUCT}_${env:FULL_VERSION}.zip"
           $markdownName = "${env:PRODUCT}_${env:FULL_VERSION}.md"
-          $publishDirectory = Join-Path $env:GITHUB_WORKSPACE "publish/$env:PRODUCT"
+          $publishRoot = Join-Path $env:GITHUB_WORKSPACE 'publish'
           $stagingDirectory = Join-Path $env:RUNNER_TEMP "Release_$($env:PRODUCT)_$($env:FULL_VERSION)"
 
-          # Сначала собираем содержимое финального архива в отдельном каталоге.
           New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
 
-          # Копируем опубликованные файлы рекурсивно без PDB.
-          # Относительный путь каждого файла сохраняется, поэтому каталоги
-          # локализации и ресурсов попадают в ZIP в исходном виде.
-          $files = Get-ChildItem -Path $publishDirectory -File -Recurse |
+          # Объединяем publish-результаты повторно, чтобы финальный архив имел
+          # ту же плоскую структуру после добавления release description.
+          $files = Get-ChildItem -Path $publishRoot -File -Recurse |
               Where-Object { $_.Extension -ne '.pdb' }
+
           foreach ($file in $files) {
-              $relativePath = $file.FullName.Substring($publishDirectory.Length).TrimStart('\', '/')
+              $matchedProject = $null
+
+              foreach ($projectPath in ($env:PROJECTS_JSON | ConvertFrom-Json)) {
+                  $projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
+                  $candidateRoot = Join-Path $publishRoot $projectName
+
+                  if ($file.FullName.StartsWith($candidateRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                      $matchedProject = $candidateRoot
+                      break
+                  }
+              }
+
+              if ($null -eq $matchedProject) {
+                  throw "Could not determine publish project for file: $($file.FullName)"
+              }
+
+              $relativePath = $file.FullName.Substring($matchedProject.Length).TrimStart('\', '/')
               $destinationPath = Join-Path $stagingDirectory $relativePath
               $destinationDirectory = Split-Path -Parent $destinationPath
 
-              # Создаём каталог назначения перед копированием, чтобы сохранить
-              # исходную структуру publish, включая вложенные каталоги.
               New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
               Copy-Item -LiteralPath $file.FullName -Destination $destinationPath -Force
           }
 
-          # Источником Markdown является body уже созданного GitHub Release.
           gh release view $tag --json body --jq .body | Set-Content -LiteralPath $markdownName -Encoding utf8NoBOM
           Copy-Item -LiteralPath $markdownName -Destination $stagingDirectory -Force
 
-          # Пересоздаём ZIP из единого staging-каталога.
           Remove-Item -LiteralPath $archiveName -Force
           Compress-Archive -Path (Join-Path $stagingDirectory '*') -DestinationPath $archiveName
 
-          # После изменения содержимого ZIP update.json должен содержать SHA-256
-          # и размер именно финального архива.
           $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
           $size = (Get-Item -LiteralPath $archiveName).Length
 
@@ -469,5 +484,4 @@ jobs:
           Write-Host "SHA-256: $sha256"
           Write-Host "Size: $size"
 
-          # Загружаем финальные версии поверх первоначальных assets.
           gh release upload $tag $archiveName update.json --clobber
