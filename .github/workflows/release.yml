@@ -222,6 +222,7 @@ jobs:
         env:
           FULL_VERSION: ${{ steps.version.outputs.full_version }}
           PRODUCT: ${{ steps.config.outputs.product }}
+          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
         run: |
           $archiveName = "${env:PRODUCT}_${env:FULL_VERSION}.zip"
           $publishRoot = Join-Path $env:GITHUB_WORKSPACE 'publish'
@@ -235,7 +236,6 @@ jobs:
           foreach ($file in $files) {
               # Каждый publish-проект временно находится в собственной папке,
               # но в финальном архиве все файлы должны находиться в одном каталоге.
-              $projectRoot = $file.FullName
               $matchedProject = $null
 
               foreach ($projectPath in ($env:PROJECTS_JSON | ConvertFrom-Json)) {
