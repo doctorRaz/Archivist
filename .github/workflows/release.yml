@@ -117,14 +117,10 @@ jobs:
         with:
           dotnet-version: 6.0.x
 
-        # Вычисляем версию релиза ОДИН РАЗ.
-        # Major и Minor берутся из первого публикуемого проекта и используются
-        # только для формирования общей версии релиза: имени ZIP, update.json
-        # и других release-метаданных.
-        #
-        # При публикации каждый проект сохраняет собственные Major и Minor,
-        # определённые его Version/Directory.Build.props. Общими для всех
-        # проектов являются только Build и Revision, переданные workflow.
+      # Вычисляем версию релиза ОДИН РАЗ.
+      # Version берётся из первого публикуемого проекта, а Build и Revision
+      # вычисляются из одного значения UTC-времени. Все проекты получают эти
+      # одинаковые Build и Revision при публикации.
       - name: Calculate release version
         id: version
         shell: pwsh
@@ -134,8 +130,8 @@ jobs:
           $projectPaths = $env:PROJECTS_JSON | ConvertFrom-Json
           $versionProject = @($projectPaths)[0]
 
-        # Получаем базовую Major.Minor первого release-проекта для формирования
-        # общей версии релиза. Это не задаёт Major.Minor другим проектам.
+          # Получаем базовую Version первого release-проекта. В текущем контракте
+          # все независимые проекты одного release используют одинаковую базовую Version.
           $baseVersion = (dotnet msbuild "$versionProject" -getProperty:Version).Trim()
 
           if ([string]::IsNullOrWhiteSpace($baseVersion)) {
