@@ -1,0 +1,53 @@
+name: Test - Called Workflow
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: "Input name from the orchestrator."
+        required: true
+        type: string
+      number:
+        description: "Input number from the orchestrator."
+        required: true
+        type: number
+    outputs:
+      name:
+        description: "Name returned by the called workflow."
+        value: ${{ jobs.process.outputs.name }}
+      number:
+        description: "Number returned by the called workflow."
+        value: ${{ jobs.process.outputs.number }}
+
+jobs:
+  process:
+    runs-on: windows-latest
+
+    outputs:
+      name: ${{ steps.result.outputs.name }}
+      number: ${{ steps.result.outputs.number }}
+
+    steps:
+      - name: Process input
+        id: result
+        shell: pwsh
+        env:
+          INPUT_NAME: ${{ inputs.name }}
+          INPUT_NUMBER: ${{ inputs.number }}
+        run: |
+          # Получаем значения от оркестратора.
+          $name = $env:INPUT_NAME
+          $number = [int]$env:INPUT_NUMBER
+
+          # Изменяем значения, чтобы по результату было видно весь путь передачи данных.
+          $resultName = "$name-worker"
+          $resultNumber = $number * 2
+
+          Write-Host "Input name: $name"
+          Write-Host "Input number: $number"
+          Write-Host "Output name: $resultName"
+          Write-Host "Output number: $resultNumber"
+
+          # Возвращаем результаты вызывающему workflow.
+          "name=$resultName" >> $env:GITHUB_OUTPUT
+          "number=$resultNumber" >> $env:GITHUB_OUTPUT

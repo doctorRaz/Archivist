@@ -1,0 +1,67 @@
+name: Test - Orchestrator
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # Передаём исходные значения в отдельный reusable workflow.
+  worker:
+    uses: ./.github/workflows/test-called.yml
+    with:
+      name: "docProp"
+      number: 42
+
+  # Получаем результаты reusable workflow и передаём их PowerShell-скрипту.
+  process:
+    needs: worker
+    runs-on: windows-latest
+
+    outputs:
+      name: ${{ steps.ps.outputs.name }}
+      number: ${{ steps.ps.outputs.number }}
+
+    steps:
+      # Скрипт находится в репозитории, поэтому сначала получаем исходный код.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run PowerShell
+        id: ps
+        shell: pwsh
+        env:
+          INPUT_NAME: ${{ needs.worker.outputs.name }}
+          INPUT_NUMBER: ${{ needs.worker.outputs.number }}
+        run: |
+          # Передаём результаты reusable workflow в PowerShell как параметры.
+          $result = .\.github\scripts\test-process.ps1 `
+            -Name $env:INPUT_NAME `
+            -Number ([int]$env:INPUT_NUMBER)
+
+          # PowerShell возвращает объект; преобразуем его свойства в outputs job.
+          "name=$($result.Name)" >> $env:GITHUB_OUTPUT
+          "number=$($result.Number)" >> $env:GITHUB_OUTPUT
+
+  # Проверяем, что результат PowerShell прошёл обратно через outputs job.
+  result:
+    needs: process
+    runs-on: windows-latest
+
+    steps:
+      - name: Show result
+        shell: pwsh
+        env:
+          RESULT_NAME: ${{ needs.process.outputs.name }}
+          RESULT_NUMBER: ${{ needs.process.outputs.number }}
+        run: |
+          Write-Host "Final name: $env:RESULT_NAME"
+          Write-Host "Final number: $env:RESULT_NUMBER"
+
+          if ($env:RESULT_NAME -ne 'docProp-worker-ps') {
+              throw "Unexpected final name: $env:RESULT_NAME"
+          }
+
+          if ([int]$env:RESULT_NUMBER -ne 94) {
+              throw "Unexpected final number: $env:RESULT_NUMBER"
+          }
+
+          Write-Host 'Orchestration test passed.'
