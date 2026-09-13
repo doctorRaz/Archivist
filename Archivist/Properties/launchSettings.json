@@ -18,7 +18,14 @@
     "maintenance": {
       "commandName": "Project",
       "commandLineArgs": "-m  \"d:\\@Developers\\В работе\\Reminder\\GPT-export\\Markdown\""
+    },
+    "Extens one": {
+      "commandName": "Project",
+      "commandLineArgs": "-s \"e:\\downloads\" -d \"d:\\@Developers\\В работе\\Reminder\\GPT-export\\Markdown\" -p \"*-export-markdown*\""
+    },
+    "Extens All": {
+      "commandName": "Project",
+      "commandLineArgs": "-s \"e:\\downloads\" -d \"d:\\@Developers\\В работе\\Reminder\\GPT-export\\Markdown\" -a -p \"*-export-markdown*\""
     }
   }
- 
 }
