@@ -6687,7 +6687,7 @@ ${items}
 		const _createTime = unixTimestampToISOString(createTime);
 		const _updateTime = unixTimestampToISOString(updateTime);
 		const rendered = format.replaceAll("{title}", title).replaceAll("{date}", dateStr()).replaceAll("{timestamp}", timestamp()).replaceAll("{chat_id}", chatId).replaceAll("{create_time}", _createTime).replaceAll("{update_time}", _updateTime).concat(`.${ext}`);
-		return (0, import_sanitize_filename.default)(rendered, { replacement: "_" }).replace(/\s+/g, "_") || `DeepSeek.${ext}`;
+		return (0, import_sanitize_filename.default)(rendered, { replacement: "_" }).replace(/\s+/g, " ") || `DeepSeek.${ext}`;
 	}
 	function formatDurationSeconds(seconds) {
 		if (!Number.isFinite(seconds) || seconds < 0) return null;
@@ -21098,7 +21098,7 @@ ${items}
 		const _title = useTitle();
 		const date = dateStr();
 		const timestamp$1 = timestamp();
-		const title = (0, import_sanitize_filename.default)(_title).replace(/\s+/g, "_");
+		const title = (0, import_sanitize_filename.default)(_title).replace(/\s+/g, " ");
 		const chatId = getChatIdFromUrl() || "this-is-a-mock-chat-id";
 		const now = Date.now() / 1e3;
 		const createTime = now;
