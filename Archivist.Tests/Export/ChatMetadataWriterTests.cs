@@ -19,6 +19,9 @@ namespace dRz.GPT_Utilities.Archivist.Tests.Export
         private static readonly DateTimeOffset UpdateTime =
             new(2026, 9, 3, 5, 26, 14, 558, TimeSpan.Zero);
 
+        private static readonly DateTimeOffset UpdateTimeWithOffset =
+            new(2026, 9, 3, 8, 26, 14, 558, TimeSpan.FromHours(3));
+
         /// <summary>
         /// Проверяет, что запись метаданных завершает обработку файла временем UpdateTime.
         /// </summary>
@@ -49,6 +52,35 @@ namespace dRz.GPT_Utilities.Archivist.Tests.Export
             Assert.That(
                 File.GetLastWriteTime(path),
                 Is.EqualTo(UpdateTime.LocalDateTime).Within(TimeSpan.FromSeconds(2)));
+        }
+
+        /// <summary>
+        /// Проверяет перевод DateTimeOffset со смещением в локальное время на границе файловой системы.
+        /// </summary>
+        [Test]
+        public void Write_UsesLocalDateTimeForLastWriteTime_WhenUpdateTimeHasOffset()
+        {
+            using TempDirectory temp = new();
+            string path = Path.Combine(temp.Path, "conversation.md");
+            File.WriteAllText(path, "---\ntitle: Test\n---\nBody\n");
+
+            ChatMetadata metadata = new()
+            {
+                CreateTime = CreateTime,
+                CreateTimeText = "2026-09-03T05:21:01.317Z",
+                UpdateTime = UpdateTimeWithOffset,
+                UpdateTimeText = "2026-09-03T08:26:14.558+03:00",
+                HasUpdateTime = true,
+                Title = "Test"
+            };
+
+            new ChatMetadataWriter(new LocalFileSystem()).Write(path, metadata);
+
+            // Проверяем именно локальное представление того же момента времени.
+            // Это отличает LocalDateTime от UtcDateTime и фиксирует контракт файловой системы.
+            Assert.That(
+                File.GetLastWriteTime(path),
+                Is.EqualTo(UpdateTimeWithOffset.LocalDateTime).Within(TimeSpan.FromSeconds(2)));
         }
 
         [Test]
