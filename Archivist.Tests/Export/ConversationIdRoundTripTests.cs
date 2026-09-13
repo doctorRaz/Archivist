@@ -19,6 +19,9 @@ namespace dRz.GPT_Utilities.Archivist.Tests.Export
         private static readonly Guid LinkConversationId =
             Guid.Parse("11111111-1111-1111-1111-111111111111");
 
+        private static readonly Guid DeepSeekConversationId =
+            Guid.Parse("41a4e269-fe72-4c74-acdd-f7d96c741ef2");
+
         [Test]
         public void ReadMetadata_ReadsConversationId_WhenChatLinkIsMissing()
         {
@@ -58,6 +61,63 @@ namespace dRz.GPT_Utilities.Archivist.Tests.Export
 
             Assert.That(metadata.ConversationId, Is.EqualTo(ExplicitConversationId));
             Assert.That(metadata.ChatLink, Is.EqualTo($"https://chatgpt.com/c/{LinkConversationId}"));
+        }
+
+        [Test]
+        public void ReadMetadata_ReadsConversationId_FromDeepSeekChatLink()
+        {
+            using TempDirectory temp = new();
+            string file = temp.Combine("chat.md");
+            File.WriteAllText(file, $"""
+                ---
+                create_time: 2026-08-24T15:23:56.473Z
+                chat_link: https://chat.deepseek.com/a/chat/s/{DeepSeekConversationId}
+                ---
+
+                body
+                """);
+
+            ChatMetadata metadata = new ChatMetadataReader(new LocalFileSystem()).Read(file);
+
+            Assert.That(metadata.ConversationId, Is.EqualTo(DeepSeekConversationId));
+        }
+
+        [Test]
+        public void ReadMetadata_ReadsConversationId_FromLinkWithQueryAndFragment()
+        {
+            using TempDirectory temp = new();
+            string file = temp.Combine("chat.md");
+            File.WriteAllText(file, $"""
+                ---
+                create_time: 2026-08-24T15:23:56.473Z
+                chat_link: https://chat.deepseek.com/a/chat/s/{DeepSeekConversationId}?foo=bar#section
+                ---
+
+                body
+                """);
+
+            ChatMetadata metadata = new ChatMetadataReader(new LocalFileSystem()).Read(file);
+
+            Assert.That(metadata.ConversationId, Is.EqualTo(DeepSeekConversationId));
+        }
+
+        [Test]
+        public void ReadMetadata_DoesNotReadConversationId_WhenLastPathSegmentIsNotGuid()
+        {
+            using TempDirectory temp = new();
+            string file = temp.Combine("chat.md");
+            File.WriteAllText(file, """
+                ---
+                create_time: 2026-08-24T15:23:56.473Z
+                chat_link: https://chat.deepseek.com/a/chat/s/not-a-guid
+                ---
+
+                body
+                """);
+
+            ChatMetadata metadata = new ChatMetadataReader(new LocalFileSystem()).Read(file);
+
+            Assert.That(metadata.ConversationId, Is.Null);
         }
 
         [Test]
