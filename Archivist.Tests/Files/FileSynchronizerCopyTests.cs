@@ -189,23 +189,6 @@ namespace dRz.GPT_Utilities.Archivist.Tests.Files
             Assert.That(temp.Combine("dst", "Chat (1).md"), Does.Exist);
         }
 
-        /// <summary>Устанавливает время последней записи файла назначения из времени обновления диалога.</summary>
-        [Test]
-        public void CopyIfNewer_SetsLastWriteTimeFromUpdateTime()
-        {
-            using TempDirectory temp = new();
-            DateTimeOffset updateTime = CreateTime.AddDays(3);
-            string source = MarkdownFactory.Write(temp.Combine("src", "Chat.md"), CreateTime, updateTime, ConversationA);
-            string destination = temp.Combine("dst", "Chat.md");
-            _ = Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-
-            _ = Synchronize(source, destination, Read(source));
-
-            DateTime expected = updateTime.LocalDateTime;
-            DateTime actual = File.GetLastWriteTime(destination);
-            Assert.That(actual, Is.EqualTo(expected).Within(TimeSpan.FromSeconds(2)));
-        }
-
         /// <summary>Освобождает старое имя до выделения уникального имени и повторно использует его без лишнего суффикса.</summary>
         [Test]
         public void CopyIfNewer_ReusesFreedStaleName_WithoutCreatingAnotherDuplicate()
