@@ -82,23 +82,34 @@ namespace dRz.GPT_Utilities.Archivist.Export
         /// <summary>Явно сохранённый идентификатор разговора.</summary>
         private Guid? _conversationId;
 
-        /// <summary>Извлекает идентификатор разговора из ссылки ChatGPT.</summary>
-        /// <param name="chatLink">Ссылка вида <c>https://chatgpt.com/c/&lt;guid&gt;</c>.</param>
-        /// <returns>Идентификатор разговора или <see langword="null"/>, если ссылка не соответствует ожидаемому формату.</returns>
+        /// <summary>
+        /// Извлекает идентификатор разговора из ссылки поддерживаемого сервиса.
+        /// Идентификатором считается последний непустой сегмент пути, если он является GUID.
+        /// </summary>
+        /// <param name="chatLink">Ссылка на разговор.</param>
+        /// <returns>Идентификатор разговора или <see langword="null"/>, если ссылка не поддерживается или последний сегмент пути не является GUID.</returns>
         private static Guid? ParseConversationId(string? chatLink)
         {
-            if (string.IsNullOrWhiteSpace(chatLink))
-                return null;
-            if (!Uri.TryCreate(chatLink, UriKind.Absolute, out Uri? uri) ||
-                !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(uri.Host, "chatgpt.com", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(chatLink) ||
+                !Uri.TryCreate(chatLink, UriKind.Absolute, out Uri? uri) ||
+                !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
                 return null;
 
+            // Пока Archivist поддерживает ChatGPT и DeepSeek. Неизвестные домены
+            // не должны случайно превращать произвольный GUID из URL в ConversationId.
+            bool isSupportedHost =
+                string.Equals(uri.Host, "chatgpt.com", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(uri.Host, "chat.deepseek.com", StringComparison.OrdinalIgnoreCase);
+
+            if (!isSupportedHost)
+                return null;
+
+            // Берём только путь URL: query string и fragment не могут повлиять на идентификатор.
             string[] segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length != 2 || !string.Equals(segments[0], "c", StringComparison.OrdinalIgnoreCase))
+            if (segments.Length == 0)
                 return null;
 
-            return Guid.TryParse(segments[1], out Guid id) ? id : null;
+            return Guid.TryParse(segments[^1], out Guid id) ? id : null;
         }
     }
 }
