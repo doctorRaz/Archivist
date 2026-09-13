@@ -50,9 +50,9 @@ internal sealed class ChatMetadataWriter : IChatMetadataWriter
         string body = content[match.Length..];
         _fileSystem.WriteAllText(filePath, $"---{Environment.NewLine}{yaml}---{Environment.NewLine}{body}");
 
-        // Запись YAML выше изменяет LastWriteTime на текущее системное время.
-        // Восстанавливаем время обновления беседы после завершения записи, чтобы
-        // итоговая дата файла соответствовала UpdateTime, а не моменту сериализации.
+        // UpdateTime хранится в модели как DateTimeOffset, а сравнение моментов времени выполняется в UTC.
+        // API LastWriteTime файловой системы принимает локальное время, поэтому только на этой границе
+        // переводим момент UpdateTime в LocalDateTime. Это должно быть последней операцией над файлом.
         if (metadata.UpdateTime.HasValue)
         {
             _fileSystem.SetLastWriteTime(
