@@ -49,6 +49,16 @@ internal sealed class ChatMetadataWriter : IChatMetadataWriter
         string yaml = Serialize(metadata);
         string body = content[match.Length..];
         _fileSystem.WriteAllText(filePath, $"---{Environment.NewLine}{yaml}---{Environment.NewLine}{body}");
+
+        // Запись YAML выше изменяет LastWriteTime на текущее системное время.
+        // Восстанавливаем время обновления беседы после завершения записи, чтобы
+        // итоговая дата файла соответствовала UpdateTime, а не моменту сериализации.
+        if (metadata.UpdateTime.HasValue)
+        {
+            _fileSystem.SetLastWriteTime(
+                filePath,
+                metadata.UpdateTime.Value.LocalDateTime);
+        }
     }
 
     /// <summary>Сериализует метаданные в YAML с правилами форматирования Archivist.</summary>
