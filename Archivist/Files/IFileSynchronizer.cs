@@ -263,13 +263,11 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
                 return uniqueResult;
             }
 
-            SetLastWriteTimeIfPresent(destinationFilePath, sourceMetadata);
             _conversationIndex.Track(destinationFilePath, sourceMetadata);
         }
         else if (status != FileOperationStatus.Skipped)
         {
             _fileSystem.CopyFile(sourceFilePath, destinationFilePath, overwrite: true);
-            SetLastWriteTimeIfPresent(destinationFilePath, sourceMetadata);
             _conversationIndex.Track(destinationFilePath, sourceMetadata);
         }
 
@@ -393,8 +391,6 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
                 destinationFilePath,
                 sourceConversationId,
                 sourceMetadata);
-
-            SetLastWriteTimeIfPresent(actualDestinationPath, sourceMetadata);
 
             foreach (string path in stalePaths)
             {
@@ -625,7 +621,6 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
                 continue;
             }
 
-            SetLastWriteTimeIfPresent(candidate, sourceMetadata);
             _conversationIndex.Track(candidate, sourceMetadata);
 
             return new FileOperationResult(
@@ -663,23 +658,6 @@ internal sealed class FileSynchronizerService : IFileSynchronizer
                     nameof(result.Status),
                     result.Status,
                     null);
-        }
-    }
-
-    /// <summary>
-    /// Устанавливает время последней записи файла, если в метаданных указана дата создания.
-    /// </summary>
-    /// <param name="destinationFilePath">Путь к файлу.</param>
-    /// <param name="sourceMetadata">Метаданные файла.</param>
-    private void SetLastWriteTimeIfPresent(
-        string destinationFilePath,
-        ChatMetadata sourceMetadata)
-    {
-        if (sourceMetadata.UpdateTime.HasValue)
-        {
-            _fileSystem.SetLastWriteTime(
-                destinationFilePath,
-                sourceMetadata.UpdateTime.Value.LocalDateTime);
         }
     }
 
