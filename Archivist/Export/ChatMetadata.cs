@@ -83,16 +83,25 @@ namespace dRz.GPT_Utilities.Archivist.Export
         private Guid? _conversationId;
 
         /// <summary>
-        /// Извлекает идентификатор разговора из ссылки.
+        /// Извлекает идентификатор разговора из ссылки поддерживаемого сервиса.
         /// Идентификатором считается последний непустой сегмент пути, если он является GUID.
-        /// Такой подход не зависит от конкретной структуры URL сервиса.
         /// </summary>
         /// <param name="chatLink">Ссылка на разговор.</param>
-        /// <returns>Идентификатор разговора или <see langword="null"/>, если последний сегмент пути не является GUID.</returns>
+        /// <returns>Идентификатор разговора или <see langword="null"/>, если ссылка не поддерживается или последний сегмент пути не является GUID.</returns>
         private static Guid? ParseConversationId(string? chatLink)
         {
             if (string.IsNullOrWhiteSpace(chatLink) ||
-                !Uri.TryCreate(chatLink, UriKind.Absolute, out Uri? uri))
+                !Uri.TryCreate(chatLink, UriKind.Absolute, out Uri? uri) ||
+                !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            // Пока Archivist поддерживает ChatGPT и DeepSeek. Неизвестные домены
+            // не должны случайно превращать произвольный GUID из URL в ConversationId.
+            bool isSupportedHost =
+                string.Equals(uri.Host, "chatgpt.com", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(uri.Host, "chat.deepseek.com", StringComparison.OrdinalIgnoreCase);
+
+            if (!isSupportedHost)
                 return null;
 
             // Берём только путь URL: query string и fragment не могут повлиять на идентификатор.
