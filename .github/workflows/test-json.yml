@@ -1,0 +1,58 @@
+name: Test JSON between steps
+
+# Запуск только вручную.
+on:
+  workflow_dispatch:
+
+jobs:
+  test-json:
+    name: Read and pass JSON values
+    runs-on: windows-latest
+
+    steps:
+      # Получаем файлы репозитория на runner.
+      # Без checkout тестовый JSON отсутствует в рабочем каталоге.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Читаем JSON и сохраняем каждое значение как output этого step.
+      - name: Read JSON
+        id: json
+        shell: pwsh
+        run: |
+          $json = Get-Content -LiteralPath .github/test-data/test-data.json -Raw |
+              ConvertFrom-Json
+
+          "product=$($json.product)" >> $env:GITHUB_OUTPUT
+          "version=$($json.version)" >> $env:GITHUB_OUTPUT
+          "archive=$($json.archive)" >> $env:GITHUB_OUTPUT
+
+      # Получаем значения первого шага и формируем строки.
+      - name: Build strings
+        id: strings
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.json.outputs.product }}
+          VERSION: ${{ steps.json.outputs.version }}
+          ARCHIVE: ${{ steps.json.outputs.archive }}
+        run: |
+          $line1 = "Product: $env:PRODUCT"
+          $line2 = "Version: $env:VERSION"
+          $line3 = "Archive: $env:ARCHIVE"
+
+          "line1=$line1" >> $env:GITHUB_OUTPUT
+          "line2=$line2" >> $env:GITHUB_OUTPUT
+          "line3=$line3" >> $env:GITHUB_OUTPUT
+
+      # Получаем результаты второго шага и выводим их.
+      - name: Print result
+        env:
+          LINE1: ${{ steps.strings.outputs.line1 }}
+          LINE2: ${{ steps.strings.outputs.line2 }}
+          LINE3: ${{ steps.strings.outputs.line3 }}
+        shell: pwsh
+        run: |
+          Write-Host "=== Result ==="
+          Write-Host $env:LINE1
+          Write-Host $env:LINE2
+          Write-Host $env:LINE3
