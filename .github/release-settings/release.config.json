@@ -2,7 +2,7 @@
     "solution": "Archivist.sln",
     "publish": [
         {
-            "name": "ChangeDBmod_NC",
+            "name": "Archivist",
             "projects": [
                 "Archivist/Archivist.csproj"
             ]
