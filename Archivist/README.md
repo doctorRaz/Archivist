@@ -60,7 +60,7 @@ Solution `Archivist.sln` включает приложение и тестовы
 
 Скачай последний релиз **[Archivist](https://github.com/doctorRaz/Archivist/releases/latest)**.
 
-Archivist не требует установки: распакуй архив и запусти `GPT_Archivist.exe`.
+Archivist не требует установки: распакуй архив и запусти `Archivist.exe`.
 
 Для запуска требуется **.NET 6 Runtime**.
 
@@ -89,13 +89,13 @@ Archivist не требует установки: распакуй архив и
 Первичный импорт:
 
 ```text
-GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault"
+Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault"
 ```
 
 После получения нового экспорта тот же каталог назначения можно использовать повторно:
 
 ```text
-GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault"
+Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault"
 ```
 
 Archivist определит существующие разговоры и обновит только те файлы, для которых экспортированная версия является более новой.
@@ -213,7 +213,7 @@ Archivist не изменяет содержимое сообщений разг
 Основной синтаксис:
 
 ```text
-GPT_Archivist -s <каталог> -d <каталог> [опции]
+Archivist -s <каталог> -d <каталог> [опции]
 ```
 
 ### Параметры
@@ -233,12 +233,12 @@ GPT_Archivist -s <каталог> -d <каталог> [опции]
 ### Примеры
 
 ```text
-GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault"
-GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault" -a
-GPT_Archivist --source "D:\GPT\Archives" --destination "D:\GPT\Vault" --all
-GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault" -p "*.zip"
-GPT_Archivist --maintenance "D:\GPT\Vault"
-GPT_Archivist -m "D:\GPT\Vault"
+Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault"
+Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault" -a
+Archivist --source "D:\GPT\Archives" --destination "D:\GPT\Vault" --all
+Archivist -s "D:\GPT\Archives" -d "D:\GPT\Vault" -p "*.zip"
+Archivist --maintenance "D:\GPT\Vault"
+Archivist -m "D:\GPT\Vault"
 ```
 
 При ошибках обработки приложение завершает работу с ненулевым кодом возврата.
