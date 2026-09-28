@@ -1,171 +1,120 @@
 name: Release
 
 # Универсальный release workflow.
-#
-# Конкретный solution и список публикуемых проектов задаются только в
-# .github/release.config.json. Workflow не зависит от имени конкретного продукта:
-# имя продукта вычисляется из имени solution и используется для тегов, Release,
-# ZIP и update.json.
+# Solution, проекты и репозитории публикации задаются в release.config.json.
+# Workflow не содержит имён конкретных продуктов или mirror-репозиториев.
 on:
   push:
     tags:
       - '*-release*'
       - '*-mandatory*'
+  # Позволяет workflow создания тега явно запустить Release на созданном теге.
+  # Push-триггер сохраняется для ручного push тега.
+  workflow_dispatch:
 
-# Для создания GitHub Release workflow должен иметь право записывать содержимое репозитория.
 permissions:
   contents: write
 
-env:
-  # Файл конфигурации содержит параметры, зависящие от конкретного проекта.
-  RELEASE_CONFIG_FILE: '.github/release.config.json'
+# Защита от гонок: два запуска одного тега не должны перетирать assets друг друга.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
-  # Пути к файлам с минимальной версией для соответствующего типа релиза.
-  # Если файл отсутствует или пуст, minimumVersion будет записан как null.
-  RELEASE_MINIMUM_VERSION_FILE: '.github/version-release/release_version.txt'
-  MANDATORY_MINIMUM_VERSION_FILE: '.github/version-release/mandatory-version.txt'
+env:
+  RELEASE_CONFIG_FILE: '.github/release-settings/release.config.json'
+  RELEASE_MINIMUM_VERSION_FILE: '.github/release-settings/release-version.txt'
+  MANDATORY_MINIMUM_VERSION_FILE: '.github/release-settings/mandatory-version.txt'
+  DOTNET_VERSION: '6.0.x'
 
 jobs:
   release:
     name: Test, build and release
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
-      # Забираем именно тот commit, на который указывает тег, запустивший workflow.
+      # fetch-depth: 0 нужен для генерации changelog по истории тегов и коммитов.
+      # Основной репозиторий всегда checkout-ится через GITHUB_TOKEN.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          token: ${{ github.token }}
 
-      # Читаем конфигурацию конкретного проекта.
-      #
-      # solution — путь к solution относительно корня репозитория.
-      # projects — список независимых csproj, которые должны попасть в release.
-      # Тестовые проекты отдельно не перечисляются: dotnet test запускается для solution.
+      # Checkout submodules вынесен в отдельный скрипт, чтобы workflow
+      # содержал только порядок шагов, а логика доступа оставалась в одном месте.
+      - name: Checkout submodules
+        if: ${{ hashFiles('.gitmodules') != '' }}
+        shell: pwsh
+        env:
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.PRIVATE_SUBMODULE_TOKEN }}
+        run: ./.github/scripts/Checkout-Submodules.ps1
+      # Валидирует конфигурацию ДО restore/build.
+      # Результаты: solution_path, publish_json, subprojects_json, modules_json,
+      # product, public_here, remote_json.
       - name: Read release configuration
         id: config
         shell: pwsh
-        run: |
-          $configPath = Join-Path $env:GITHUB_WORKSPACE $env:RELEASE_CONFIG_FILE
+        run: ./.github/scripts/Read-ReleaseConfig.ps1
 
-          if (-not (Test-Path -LiteralPath $configPath)) {
-              throw "Release configuration was not found: $configPath"
-          }
-
-          $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-
-          if ([string]::IsNullOrWhiteSpace($config.solution)) {
-              throw "Release configuration property 'solution' is empty."
-          }
-
-          if ($null -eq $config.projects -or @($config.projects).Count -eq 0) {
-              throw "Release configuration property 'projects' must contain at least one project."
-          }
-
-          $solutionPath = $config.solution
-          $projectPaths = @($config.projects)
-          $solutionName = [System.IO.Path]::GetFileNameWithoutExtension($solutionPath)
-
-          if ([string]::IsNullOrWhiteSpace($solutionName)) {
-              throw "Could not determine product name from solution: $solutionPath"
-          }
-
-          if (-not (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $solutionPath))) {
-              throw "Solution was not found: $solutionPath"
-          }
-
-          Write-Host "Solution: $solutionPath"
-          Write-Host "Projects:"
-
-          foreach ($projectPath in $projectPaths) {
-              if ([string]::IsNullOrWhiteSpace($projectPath)) {
-                  throw "Release configuration contains an empty project path."
-              }
-
-              if (-not (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $projectPath))) {
-                  throw "Project was not found: $projectPath"
-              }
-
-              Write-Host "  $projectPath"
-          }
-
-          # JSON is used for the project list so it can be passed unchanged between
-          # workflow steps through GITHUB_OUTPUT.
-          $projectsJson = $projectPaths | ConvertTo-Json -Compress
-
-          "solution_path=$solutionPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "projects_json=$projectsJson" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "product=$solutionName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      # Проверяем, что тег действительно относится к продукту из конфигурации.
-      # Это предотвращает случайный запуск release workflow для чужого тега.
       - name: Validate release tag
         shell: pwsh
         env:
           PRODUCT: ${{ steps.config.outputs.product }}
         run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag') {
+              throw "Release workflow must be triggered by a tag, got: $($env:GITHUB_REF_TYPE)"
+          }
+
           $tag = $env:GITHUB_REF_NAME
           $product = $env:PRODUCT
 
           if ($tag -notlike "${product}_*-release*" -and $tag -notlike "${product}_*-mandatory*") {
-              throw "Unsupported release tag '$tag' for product '$product'. Expected '${product}_*-release*' or '${product}_*-mandatory*'."
+              throw "Unsupported release tag '$tag' for product '$product'."
           }
 
           Write-Host "Release tag: $tag"
 
-      # Archivist и другие проекты этой схемы собираются под .NET 6.
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 6.0.x
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: '**/*.csproj'
 
-      # Вычисляем версию релиза ОДИН РАЗ.
-      # Major и Minor берутся из первого публикуемого проекта и используются
-      # только для формирования общей версии релиза: имени ZIP, update.json
-      # и других release-метаданных.
-      #
-      # При публикации каждый проект сохраняет собственные Major и Minor,
-      # определённые его Version/Directory.Build.props. Общими для всех
-      # проектов являются только Build и Revision, переданные workflow.
+      # Версия вычисляется ОДИН РАЗ и затем используется всеми публикациями.
       - name: Calculate release version
         id: version
         shell: pwsh
         env:
-          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
+          PUBLISH_JSON: ${{ steps.config.outputs.publish_json }}
         run: |
-          $projectPaths = $env:PROJECTS_JSON | ConvertFrom-Json
-          $versionProject = @($projectPaths)[0]
+          $publishGroups = @($env:PUBLISH_JSON | ConvertFrom-Json)
+          if ($publishGroups.Count -eq 0 -or @($publishGroups[0].projects).Count -eq 0) {
+              throw 'PUBLISH_JSON does not contain a project for version calculation.'
+          }
+          $versionProject = [string]@($publishGroups[0].projects)[0]
 
-          # Получаем базовую Major.Minor первого release-проекта для формирования
-          # общей версии релиза. Это не задаёт Major.Minor другим проектам.
           $baseVersion = (dotnet msbuild "$versionProject" -getProperty:Version).Trim()
-
           if ([string]::IsNullOrWhiteSpace($baseVersion)) {
               throw "Version is empty in project: $versionProject"
           }
 
-          try {
-              $parsedBaseVersion = [System.Version]::Parse($baseVersion)
-          }
-          catch {
-              throw "Invalid project Version '$baseVersion'. Expected at least Major.Minor."
-          }
+          try { $parsedBaseVersion = [System.Version]::Parse($baseVersion) }
+          catch { throw "Invalid project Version '$baseVersion'. Expected at least Major.Minor." }
 
           if ($parsedBaseVersion.Build -ge 0 -or $parsedBaseVersion.Revision -ge 0) {
               throw "Project Version must contain only Major.Minor before Build and Revision are appended: $baseVersion"
           }
 
-          # Одно значение времени используется для обоих компонентов версии.
           $utcNow = [System.DateTime]::UtcNow
           $build = ($utcNow - [System.DateTime]::Parse('2000-01-01')).Days
-          $revision = [Math]::Round($utcNow.TimeOfDay.TotalSeconds / 2, 0)
+          # Floor делает Revision детерминированным и не зависит от режима округления.
+          $revision = [Math]::Floor($utcNow.TimeOfDay.TotalSeconds / 2)
           $fullVersion = "$baseVersion.$build.$revision"
-
           [System.Version]::Parse($fullVersion) | Out-Null
 
-          Write-Host "Version project: $versionProject"
-          Write-Host "Base version: $baseVersion"
-          Write-Host "UTC time: $utcNow"
-          Write-Host "Build: $build"
-          Write-Host "Revision: $revision"
           Write-Host "Release version: $fullVersion"
 
           "base_version=$baseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -173,104 +122,39 @@ jobs:
           "revision=$revision" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      # Восстанавливаем NuGet-зависимости один раз для всего solution.
       - name: Restore
         env:
           SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
         run: dotnet restore "$env:SOLUTION_PATH"
 
-      # Тестируем solution до публикации.
-      # Все тестовые проекты, входящие в solution, будут обработаны автоматически.
       - name: Test
         env:
           SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
-        run: dotnet test "$env:SOLUTION_PATH" --configuration Release --no-restore --verbosity normal
+        run: |
+          dotnet test "$env:SOLUTION_PATH" `
+            --configuration Release `
+            --no-restore `
+            --logger "trx;LogFileName=test-results.trx" `
+            --results-directory TestResults
 
-      # Публикуем каждый независимый release-проект в отдельный временный каталог.
-      # Это предотвращает взаимное влияние publish-операций до этапа объединения.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          retention-days: 7
+
       - name: Publish projects
+        id: publish
         shell: pwsh
         env:
-          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
+          PUBLISH_JSON: ${{ steps.config.outputs.publish_json }}
+          SUBPROJECTS_JSON: ${{ steps.config.outputs.subprojects_json }}
           BUILD: ${{ steps.version.outputs.build }}
           REVISION: ${{ steps.version.outputs.revision }}
-        run: |
-          $projectPaths = $env:PROJECTS_JSON | ConvertFrom-Json
-          $publishRoot = Join-Path $env:GITHUB_WORKSPACE 'publish'
+        run: ./.github/scripts/Publish-Projects.ps1
 
-          Remove-Item -LiteralPath $publishRoot -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $publishRoot -Force | Out-Null
-
-          foreach ($projectPath in $projectPaths) {
-              $projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
-              $projectDirectory = Join-Path $publishRoot $projectName
-
-              Write-Host "Publishing: $projectPath"
-              Write-Host "Output: $projectDirectory"
-
-              dotnet publish "$projectPath" `
-                  --configuration Release `
-                  --no-restore `
-                  --output "$projectDirectory" `
-                  --self-contained false `
-                  -p:Build=$env:BUILD `
-                  -p:Revision=$env:REVISION
-          }
-
-      # Объединяем все publish-результаты в один плоский каталог.
-      # Независимые проекты используют одинаковые reference-библиотеки, поэтому
-      # одинаковые файлы можно безопасно перезаписывать последующей копией.
-      - name: Create release archive
-        id: archive
-        shell: pwsh
-        env:
-          FULL_VERSION: ${{ steps.version.outputs.full_version }}
-          PRODUCT: ${{ steps.config.outputs.product }}
-          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
-        run: |
-          $archiveName = "${env:PRODUCT}_${env:FULL_VERSION}.zip"
-          $publishRoot = Join-Path $env:GITHUB_WORKSPACE 'publish'
-          $stagingDirectory = Join-Path $env:RUNNER_TEMP "Initial_$($env:PRODUCT)_$($env:FULL_VERSION)"
-
-          New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
-
-          $files = Get-ChildItem -Path $publishRoot -File -Recurse |
-              Where-Object { $_.Extension -ne '.pdb' }
-
-          foreach ($file in $files) {
-              # Каждый publish-проект временно находится в собственной папке,
-              # но в финальном архиве все файлы должны находиться в одном каталоге.
-              $matchedProject = $null
-
-              foreach ($projectPath in ($env:PROJECTS_JSON | ConvertFrom-Json)) {
-                  $projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
-                  $candidateRoot = Join-Path $publishRoot $projectName
-
-                  if ($file.FullName.StartsWith($candidateRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
-                      $matchedProject = $candidateRoot
-                      break
-                  }
-              }
-
-              if ($null -eq $matchedProject) {
-                  throw "Could not determine publish project for file: $($file.FullName)"
-              }
-
-              $relativePath = $file.FullName.Substring($matchedProject.Length).TrimStart('\', '/')
-              $destinationPath = Join-Path $stagingDirectory $relativePath
-              $destinationDirectory = Split-Path -Parent $destinationPath
-
-              New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
-              Copy-Item -LiteralPath $file.FullName -Destination $destinationPath -Force
-          }
-
-          Compress-Archive -Path (Join-Path $stagingDirectory '*') -DestinationPath $archiveName
-          Write-Host "Created archive: $archiveName"
-
-          $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      # Определяем тип релиза по имени тега и выбираем файл minimumVersion.
       - name: Determine release type
         id: release_type
         shell: pwsh
@@ -288,17 +172,11 @@ jobs:
               $mandatory = $true
               $minimumVersionFile = $env:MANDATORY_MINIMUM_VERSION_FILE
           }
-          else {
-              throw "Unsupported release tag: $tag"
-          }
+          else { throw "Unsupported release tag: $tag" }
 
-          Write-Host "Tag: $tag"
-          Write-Host "Mandatory: $mandatory"
-          Write-Host "Minimum version file: $minimumVersionFile"
           "mandatory=$($mandatory.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "minimum_version_file=$minimumVersionFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      # Читаем minimumVersion из выбранного файла.
       - name: Read minimum version
         id: minimum_version
         shell: pwsh
@@ -310,14 +188,9 @@ jobs:
 
           if (Test-Path -LiteralPath $file) {
               $text = (Get-Content -LiteralPath $file -Raw).Trim()
-
               if (-not [string]::IsNullOrWhiteSpace($text)) {
-                  try {
-                      $parsedVersion = [System.Version]::Parse($text)
-                  }
-                  catch {
-                      throw "Invalid minimum version '$text' in file: $file. Expected Major.Minor.Build.Revision."
-                  }
+                  try { $parsedVersion = [System.Version]::Parse($text) }
+                  catch { throw "Invalid minimum version '$text' in file: $file." }
 
                   if ($parsedVersion.Revision -lt 0) {
                       throw "Minimum version must contain four components: $text"
@@ -334,154 +207,97 @@ jobs:
 
           if ($null -eq $minimumVersion) {
               'minimum_version_json=null' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-          else {
-              $json = $minimumVersion | ConvertTo-Json -Compress
-              "minimum_version_json=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-
-      # Создаём update.json из версии, вычисленной workflow, а не из DLL.
-      - name: Create update manifest
-        shell: pwsh
-        env:
-          FULL_VERSION: ${{ steps.version.outputs.full_version }}
-          SHA256: ${{ steps.archive.outputs.sha256 }}
-          MANDATORY: ${{ steps.release_type.outputs.mandatory }}
-          MINIMUM_VERSION_JSON: ${{ steps.minimum_version.outputs.minimum_version_json }}
-          COMMIT: ${{ github.sha }}
-          PRODUCT: ${{ steps.config.outputs.product }}
-        run: |
-          $version = [System.Version]::Parse($env:FULL_VERSION)
-
-          if ($version.Revision -lt 0) {
-              throw "Revision is not available in version: $env:FULL_VERSION"
-          }
-
-          $minimumVersion = if ($env:MINIMUM_VERSION_JSON -eq 'null') {
-              $null
           } else {
-              $env:MINIMUM_VERSION_JSON | ConvertFrom-Json
+              "minimum_version_json=$($minimumVersion | ConvertTo-Json -Compress)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
-          $manifest = [ordered]@{
-              product = $env:PRODUCT
-              version = [ordered]@{
-                  major = $version.Major
-                  minor = $version.Minor
-                  build = $version.Build
-                  revision = $version.Revision
-              }
-              tag = $env:GITHUB_REF_NAME
-              asset = "$($env:PRODUCT)_$($env:FULL_VERSION).zip"
-              sha256 = $env:SHA256
-              size = $null
-              commit = $env:COMMIT
-              mandatory = [System.Convert]::ToBoolean($env:MANDATORY)
-              minimumVersion = $minimumVersion
-              publishedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
-          }
-
-          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path update.json -Encoding utf8NoBOM
-
-      # Получаем описание будущего Release и сохраняем его вместе с архивом.
+      # Заметки создаются до staging, поэтому release-notes.md входит в оба
+      # финальных архива и участвует в расчёте их SHA-256.
       - name: Generate release notes
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $tagRef = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:GITHUB_REF_NAME" | ConvertFrom-Json
-          if ($tagRef.object.type -eq 'tag') {
-              $tagMessage = (gh api "repos/$env:GITHUB_REPOSITORY/git/tags/$($tagRef.object.sha)" | ConvertFrom-Json).message.Trim()
-          } else {
-              $tagMessage = (gh api "repos/$env:GITHUB_REPOSITORY/commits/$($tagRef.object.sha)" | ConvertFrom-Json).commit.message.Trim()
-          }
+        run: ./.github/scripts/New-ReleaseNotes.ps1
 
-          $generated = gh api --method POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$env:GITHUB_REF_NAME" | ConvertFrom-Json
-          $body = "# $env:GITHUB_REF_NAME"
-          if ($tagMessage) { $body += "`r`n`r`n$tagMessage" }
-          if ($generated.body) { $body += "`r`n`r`n$($generated.body)" }
-          $body | Set-Content -Path release-notes.md -Encoding utf8NoBOM
+      # Формирует единый staging после создания заметок. Дальше staging больше
+      # не изменяется: оба архива создаются из абсолютно одного набора файлов.
+      - name: Stage release files
+        id: stage
+        shell: pwsh
+        env:
+          PUBLISH_JSON: ${{ steps.config.outputs.publish_json }}
+          PROJECT_TYPES_JSON: ${{ steps.publish.outputs.project_types_json }}
+          MODULES_JSON: ${{ steps.config.outputs.modules_json }}
+          GH_TOKEN: ${{ github.token }}
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.PRIVATE_SUBMODULE_TOKEN }}
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+        run: ./.github/scripts/Stage-ReleaseFiles.ps1
 
-      # Создаём GitHub Release с первоначальным ZIP и update.json.
-      - name: Create GitHub release
+      # Создаёт обычный ZIP и пароль-защищённый 7z. Манифест здесь намеренно
+      # не создаётся: он должен содержать метаданные уже готовых архивов.
+      - name: Create release archives
+        id: archives
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          STAGING_DIRECTORY: ${{ steps.stage.outputs.staging_directory }}
+        run: ./.github/scripts/New-ReleaseArchives.ps1
+
+      # Манифест строится только из метаданных готовых архивов. Повторной
+      # упаковки здесь нет, поэтому SHA-256 в update.json точно соответствует
+      # опубликованным файлам.
+      - name: Create update manifest
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          MANDATORY: ${{ steps.release_type.outputs.mandatory }}
+          MINIMUM_VERSION_JSON: ${{ steps.minimum_version.outputs.minimum_version_json }}
+          COMMIT: ${{ github.sha }}
+          ARCHIVE_NAME: ${{ steps.archives.outputs.archive_name }}
+          ARCHIVE_SHA256: ${{ steps.archives.outputs.archive_sha256 }}
+          ARCHIVE_SIZE: ${{ steps.archives.outputs.archive_size }}
+          PROTECTED_ARCHIVE_NAME: ${{ steps.archives.outputs.protected_archive_name }}
+          PROTECTED_SHA256: ${{ steps.archives.outputs.protected_sha256 }}
+          PROTECTED_SIZE: ${{ steps.archives.outputs.protected_size }}
+        run: ./.github/scripts/New-UpdateManifest.ps1
+
+      # publicHere=false позволяет использовать тот же workflow для решений,
+      # которым не нужен Release в исходном репозитории.
+      - name: Create release in current repository
+        if: steps.config.outputs.public_here == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          FULL_VERSION: ${{ steps.version.outputs.full_version }}
           PRODUCT: ${{ steps.config.outputs.product }}
-        run: |
-          $tag = $env:GITHUB_REF_NAME
-          $archiveName = "${env:PRODUCT}_${env:FULL_VERSION}.zip"
-          $releaseTitle = "$($env:PRODUCT) $($env:FULL_VERSION)"
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          ARCHIVE_NAME: ${{ steps.archives.outputs.archive_name }}
+          PROTECTED_ARCHIVE_NAME: ${{ steps.archives.outputs.protected_archive_name }}
+        run: ./.github/scripts/New-Release.ps1 -Repository $env:GITHUB_REPOSITORY -VerifyTag
 
-          gh release create $tag $archiveName update.json `
-            --title $releaseTitle `
-            --notes-file release-notes.md `
-            --verify-tag
-
-      # Добавляем описание Release в архив и повторно загружаем финальные assets.
-      - name: Add release description to archive
+      # Один и тот же набор финальных архивов и update.json публикуется во
+      # все настроенные удалённые репозитории без повторной сборки.
+      - name: Publish release to configured repositories
+        if: steps.config.outputs.remote_json != '[]'
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
-          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          GH_TOKEN: ${{ secrets.DOC_PROPS_RELEASE_TOKEN }}
+          REMOTE_JSON: ${{ steps.config.outputs.remote_json }}
           PRODUCT: ${{ steps.config.outputs.product }}
-          PROJECTS_JSON: ${{ steps.config.outputs.projects_json }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          ARCHIVE_NAME: ${{ steps.archives.outputs.archive_name }}
+          PROTECTED_ARCHIVE_NAME: ${{ steps.archives.outputs.protected_archive_name }}
         run: |
-          $tag = $env:GITHUB_REF_NAME
-          $archiveName = "${env:PRODUCT}_${env:FULL_VERSION}.zip"
-          $markdownName = "${env:PRODUCT}_${env:FULL_VERSION}.md"
-          $publishRoot = Join-Path $env:GITHUB_WORKSPACE 'publish'
-          $stagingDirectory = Join-Path $env:RUNNER_TEMP "Release_$($env:PRODUCT)_$($env:FULL_VERSION)"
+          $remoteRepos = @($env:REMOTE_JSON | ConvertFrom-Json)
 
-          New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
+          foreach ($remoteRepo in $remoteRepos) {
+              Write-Host "Publishing to configured repository: $remoteRepo"
+              $env:TARGET_REPO = [string]$remoteRepo
+              ./.github/scripts/Publish-PublicRelease.ps1
 
-          # Объединяем publish-результаты повторно, чтобы финальный архив имел
-          # ту же плоскую структуру после добавления release description.
-          $files = Get-ChildItem -Path $publishRoot -File -Recurse |
-              Where-Object { $_.Extension -ne '.pdb' }
-
-          foreach ($file in $files) {
-              $matchedProject = $null
-
-              foreach ($projectPath in ($env:PROJECTS_JSON | ConvertFrom-Json)) {
-                  $projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
-                  $candidateRoot = Join-Path $publishRoot $projectName
-
-                  if ($file.FullName.StartsWith($candidateRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
-                      $matchedProject = $candidateRoot
-                      break
-                  }
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Publication failed for repository '$remoteRepo'."
               }
-
-              if ($null -eq $matchedProject) {
-                  throw "Could not determine publish project for file: $($file.FullName)"
-              }
-
-              $relativePath = $file.FullName.Substring($matchedProject.Length).TrimStart('\', '/')
-              $destinationPath = Join-Path $stagingDirectory $relativePath
-              $destinationDirectory = Split-Path -Parent $destinationPath
-
-              New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
-              Copy-Item -LiteralPath $file.FullName -Destination $destinationPath -Force
           }
-
-          gh release view $tag --json body --jq .body | Set-Content -LiteralPath $markdownName -Encoding utf8NoBOM
-          Copy-Item -LiteralPath $markdownName -Destination $stagingDirectory -Force
-
-          Remove-Item -LiteralPath $archiveName -Force
-          Compress-Archive -Path (Join-Path $stagingDirectory '*') -DestinationPath $archiveName
-
-          $sha256 = (Get-FileHash -LiteralPath $archiveName -Algorithm SHA256).Hash.ToLowerInvariant()
-          $size = (Get-Item -LiteralPath $archiveName).Length
-
-          $manifest = Get-Content -LiteralPath update.json -Raw | ConvertFrom-Json
-          $manifest.sha256 = $sha256
-          $manifest.size = $size
-          $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath update.json -Encoding utf8NoBOM
-
-          Write-Host "Final archive: $archiveName"
-          Write-Host "SHA-256: $sha256"
-          Write-Host "Size: $size"
-
-          gh release upload $tag $archiveName update.json --clobber
