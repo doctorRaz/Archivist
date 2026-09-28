@@ -9,10 +9,10 @@ namespace dRz.GPT_Utilities.Archivist.CommandLine
         public static void Print()
         {
             ConsoleWriter.Info("""
-    GPT_Archivist — обработка архивов экспорта ChatGPT
+    Archivist — обработка архивов экспорта ChatGPT
 
     Использование:
-      GPT_Archivist -s <каталог> -d <каталог> [опции]
+      Archivist -s <каталог> -d <каталог> [опции]
 
     Параметры:
 
@@ -44,17 +44,17 @@ namespace dRz.GPT_Utilities.Archivist.CommandLine
 
     Примеры:
 
-      GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Unpacked"
+      Archivist -s "D:\GPT\Archives" -d "D:\GPT\Unpacked"
 
-      GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Unpacked" -a
+      Archivist -s "D:\GPT\Archives" -d "D:\GPT\Unpacked" -a
 
-      GPT_Archivist --source "D:\GPT\Archives" --destination "D:\GPT\Unpacked" --all
+      Archivist --source "D:\GPT\Archives" --destination "D:\GPT\Unpacked" --all
 
-      GPT_Archivist -s "D:\GPT\Archives" -d "D:\GPT\Unpacked" -p "*.zip"
+      Archivist -s "D:\GPT\Archives" -d "D:\GPT\Unpacked" -p "*.zip"
 
-      GPT_Archivist --maintenance "D:\GPT\Unpacked"
+      Archivist --maintenance "D:\GPT\Unpacked"
 
-      GPT_Archivist -m "D:\GPT\Unpacked"
+      Archivist -m "D:\GPT\Unpacked"
 
     """);
         }
