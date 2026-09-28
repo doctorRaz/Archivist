@@ -1,0 +1,18 @@
+{
+    "solution": "Archivist.sln",
+    "publish": [
+        {
+            "name": "Archivist",
+            "projects": [
+                "Archivist/Archivist.csproj"
+            ]
+        }
+    ],
+    "subProjects": [
+    ],
+    "modules": [
+    ],
+    "publicHere": true,
+    "remote": [
+    ]
+}
