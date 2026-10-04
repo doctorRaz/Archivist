@@ -194,8 +194,14 @@ foreach ($module in $modules) {
         throw "Module '$moduleRepository' must contain at least one project."
     }
 
-    foreach ($projectPath in @($module.projects)) {
-        $moduleProject = [string]$projectPath
+    foreach ($projectEntry in @($module.projects)) {
+        $moduleProject = if ($projectEntry -is [string]) { [string]$projectEntry } else { [string]$projectEntry.path }
+        if ([string]::IsNullOrWhiteSpace($moduleProject)) {
+            throw "Module '$moduleRepository' contains a project entry without 'path'."
+        }
+        if ($projectEntry -isnot [string] -and $null -ne $projectEntry.notUnique -and $projectEntry.notUnique -isnot [bool]) {
+            throw "Module '$moduleRepository' project '$moduleProject' property 'notUnique' must be a boolean."
+        }
         $normalizedProject = $moduleProject.Replace('\','/').Trim('/')
 
         if ([string]::IsNullOrWhiteSpace($normalizedProject)) {
