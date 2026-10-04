@@ -6,33 +6,33 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$configPath = Join-Path $env:GITHUB_WORKSPACE $env:RELEASE_CONFIG_FILE
+if ([string]::IsNullOrWhiteSpace($env:MODULES_JSON)) {
+    throw "MODULES_JSON is empty; module configuration must be provided by the release configuration step."
+}
+
 $stagingDirectory = $env:STAGING_DIRECTORY
-
-if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { throw "Release configuration was not found: $configPath" }
-if (-not (Test-Path -LiteralPath $stagingDirectory -PathType Container)) { throw "Release staging directory was not found: $stagingDirectory" }
-
-$config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-if ($null -eq $config.modules) { throw "Release configuration property 'modules' must be an array. Use [] when no external modules are configured." }
-$modules = @($config.modules)
+$modules = @($env:MODULES_JSON | ConvertFrom-Json)
 if ($modules.Count -eq 0) { Write-Host 'No external modules are configured.'; exit 0 }
 
 $destinationPaths = @{}
 foreach ($module in $modules) {
     $repository = [string]$module.repository
     $projects = @($module.projects)
-    if ($repository -notmatch '^[^/\s]+/[^/\s]+$') { throw "Invalid module repository '$repository'. Expected owner/repository." }
-    if ($projects.Count -eq 0) { throw "Module '$repository' must define at least one project in 'projects'." }
     foreach ($projectValue in $projects) {
-        $project = [string]$projectValue
+        $project = if ($projectValue -is [string]) { [string]$projectValue } elseif ($null -ne $projectValue.path) { [string]$projectValue.path } else { throw "Module '$repository' contains a project entry without 'path'." }
+        $notUnique = if ($projectValue -is [string] -or $null -eq $projectValue.notUnique) { $false } elseif ($projectValue.notUnique -is [bool]) { [bool]$projectValue.notUnique } else { throw "Module '$repository' project '$project' property 'notUnique' must be a boolean." }
         $normalizedProject = $project.Replace('\','/').Trim('/')
         if ([string]::IsNullOrWhiteSpace($normalizedProject)) { throw "Module '$repository' contains an empty project path." }
         if ($normalizedProject -match '(^|/)\.\.(/|$)') { throw "Invalid project path '$project' in module '$repository'. Parent directory traversal is not allowed." }
         if ([System.IO.Path]::IsPathRooted($normalizedProject)) { throw "Invalid project path '$project' in module '$repository'. Rooted paths are not allowed." }
         $destinationName = [System.IO.Path]::GetFileName($normalizedProject)
         if ([string]::IsNullOrWhiteSpace($destinationName) -or $destinationName -eq '.' -or $destinationName -eq '..') { throw "Invalid module project path '$project'." }
-        if ($destinationPaths.ContainsKey($destinationName)) { throw "Duplicate module project destination '$destinationName'." }
-        $destinationPaths[$destinationName] = $repository
+        # Повторное конечное имя разрешено только если оба проекта явно участвуют в объединении.
+        if ($destinationPaths.ContainsKey($destinationName)) {
+            $previous = $destinationPaths[$destinationName]
+            if (-not $notUnique -or -not $previous.notUnique) { throw "Duplicate module project destination '$destinationName'." }
+        }
+        $destinationPaths[$destinationName] = [pscustomobject]@{ repository=$repository; notUnique=$notUnique }
     }
 }
 
@@ -107,6 +107,8 @@ function Copy-ZipEntry {
     $relativeName = $relativeName.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
     $destination = Join-Path $DestinationRoot $relativeName
     if ($Entry.FullName.EndsWith('/')) { New-Item -ItemType Directory -Path $destination -Force | Out-Null; return }
+    # При объединении каталогов разные файлы допустимы, но одинаковый относительный путь нельзя перезаписывать.
+    if (Test-Path -LiteralPath $destination) { throw "Module artifact file collision at '$relativeName'." }
     $parent = Split-Path -Parent $destination
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
     $input = $Entry.Open()
@@ -114,18 +116,6 @@ function Copy-ZipEntry {
         $output = [System.IO.File]::Create($destination)
         try { $input.CopyTo($output) } finally { $output.Dispose() }
     } finally { $input.Dispose() }
-}
-
-function Get-ArchiveRootDirectory {
-    param([Parameter(Mandatory)]$Archive)
-    $topLevelDirectories = @(
-        $Archive.Entries | ForEach-Object {
-            $name = $_.FullName.Replace('\','/')
-            if ($name -match '^([^/]+)/') { $matches[1] }
-        } | Sort-Object -Unique
-    )
-    if ($topLevelDirectories.Count -ne 1) { throw "Expected exactly one root directory in the selected module artifact; found $($topLevelDirectories.Count)." }
-    return [string]$topLevelDirectories[0]
 }
 
 function Copy-ProjectFromZip {
@@ -148,7 +138,10 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 for ($moduleIndex = 0; $moduleIndex -lt $modules.Count; $moduleIndex++) {
     $module = $modules[$moduleIndex]
     $repository = [string]$module.repository
-    $projects = @($module.projects) | ForEach-Object { ([string]$_).Replace('\','/').Trim('/') }
+    $projects = @($module.projects) | ForEach-Object {
+        if ($_ -is [string]) { ([string]$_).Replace('\','/').Trim('/') }
+        else { ([string]$_.path).Replace('\','/').Trim('/') }
+    }
     Write-Host ("=== External module repository: " + $repository + " ===")
     Write-Host ("Projects: " + ($projects -join ', '))
 
@@ -172,8 +165,6 @@ for ($moduleIndex = 0; $moduleIndex -lt $modules.Count; $moduleIndex++) {
 
     $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
-        $archiveRoot = Get-ArchiveRootDirectory -Archive $archive
-        Write-Host ("Archive root: " + $archiveRoot)
         foreach ($project in $projects) {
             Write-Host ("Extracting project: " + $project)
             Copy-ProjectFromZip -Archive $archive -Project $project -DestinationRoot (Join-Path $stagingDirectory $env:PRODUCT)

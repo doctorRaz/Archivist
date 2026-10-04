@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: false
+          submodules: true
           token: ${{ github.token }}
 
       # Checkout submodules вынесен в отдельный скрипт, чтобы workflow
@@ -285,6 +285,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.DOC_PROPS_RELEASE_TOKEN }}
           REMOTE_JSON: ${{ steps.config.outputs.remote_json }}
+          PUBLIC_HERE: ${{ steps.config.outputs.public_here }}
           PRODUCT: ${{ steps.config.outputs.product }}
           FULL_VERSION: ${{ steps.version.outputs.full_version }}
           ARCHIVE_NAME: ${{ steps.archives.outputs.archive_name }}
@@ -293,6 +294,11 @@ jobs:
           $remoteRepos = @($env:REMOTE_JSON | ConvertFrom-Json)
 
           foreach ($remoteRepo in $remoteRepos) {
+              if ($env:PUBLIC_HERE -eq 'true' -and $remoteRepo -eq $env:GITHUB_REPOSITORY) {
+                  Write-Host "Skipping configured repository because the release was already created here: $remoteRepo"
+                  continue
+              }
+
               Write-Host "Publishing to configured repository: $remoteRepo"
               $env:TARGET_REPO = [string]$remoteRepo
               ./.github/scripts/Publish-PublicRelease.ps1
