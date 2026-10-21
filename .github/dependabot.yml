@@ -9,7 +9,7 @@ updates:
   - package-ecosystem: "nuget"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
 
     groups:
       nuget-dependencies:
@@ -18,3 +18,4 @@ updates:
 
     ignore:
       - dependency-name: "NUnit3TestAdapter"
+      - dependency-name: "NUnit"
